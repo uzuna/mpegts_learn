@@ -5,7 +5,7 @@ use std::{
 
 use byteorder::{BigEndian, ReadBytesExt};
 
-use crate::klv::KLV;
+use crate::klv::KLVRaw;
 
 #[derive(Debug)]
 enum Value {
@@ -24,13 +24,13 @@ enum UASDataset {
 }
 
 impl UASDataset {
-    fn from_id(klv: &KLV) -> Result<UASDataset, ParseError> {
+    fn from_id(klv: &KLVRaw) -> Result<UASDataset, ParseError> {
         match klv.key() {
             2 => Ok(UASDataset::Timestamp),
             x => Err(ParseError::UndefinedID(x)),
         }
     }
-    fn parse(&self, klv: &KLV) -> Result<Value, ParseError> {
+    fn parse(&self, klv: &KLVRaw) -> Result<Value, ParseError> {
         match self {
             UASDataset::Timestamp => {
                 let mut rdr = Cursor::new(klv.value());
@@ -46,14 +46,14 @@ impl UASDataset {
 
 #[cfg(test)]
 mod tests {
-    use super::{UASDataset, Value, KLV};
+    use super::{KLVRaw, UASDataset, Value};
     use chrono::{DateTime, Utc};
 
     #[test]
     fn test_buffer() {
         let buf = vec![1, 4, 1, 2, 0, 0];
 
-        let klv = KLV::from_bytes(&buf);
+        let klv = KLVRaw::from_bytes(&buf);
         assert_eq!(klv.key(), 1);
         assert_eq!(klv.value(), &buf[2..])
     }
@@ -62,7 +62,7 @@ mod tests {
     fn test_uas_datalink_ls() {
         let buf = vec![2, 8, 0, 0x4, 0x6c, 0x8e, 0x20, 0x03, 0x83, 0x85];
 
-        let klv = KLV::from_bytes(&buf);
+        let klv = KLVRaw::from_bytes(&buf);
         let ls = UASDataset::from_id(&klv).unwrap();
         let value = ls.parse(&klv).unwrap();
 
