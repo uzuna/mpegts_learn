@@ -3,6 +3,7 @@ extern crate mpeg2ts_reader;
 extern crate hex_slice;
 
 mod klv;
+mod uasdms;
 
 use hex_slice::AsHex;
 
