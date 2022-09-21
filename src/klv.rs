@@ -1,12 +1,19 @@
 //! BER encoding parser
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::{borrow::Cow, fmt::Debug, marker::PhantomData};
 
+/// KLVパース時に発生するエラーについて
 #[derive(Debug)]
 pub enum ParseError {
+    // 定義にないIDの場合
     UndefinedID(u8),
+    // KLV形式を満たさない場合
     LessLength,
+    // キーに対応する長さがあるため、それを満たさない場合のエラー
     UnexpectLength(usize),
+    // 渡された値が不正値などでパースできない時に返す
+    // 'aだとparse()の戻りでライフタイムが足りなくなるので'staticとする
+    ValueError(Cow<'static, str>),
 }
 
 pub struct KLVRaw<'buf>(&'buf [u8]);
@@ -69,7 +76,7 @@ pub trait DataSet {
     fn from_byte(b: u8) -> Option<Self>
     where
         Self: std::marker::Sized;
-    fn value(&self, v: &[u8]) -> Self::Item;
+    fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError>;
     fn expect_length(&self, _len: usize) -> bool {
         true
     }
@@ -115,7 +122,7 @@ impl<'buf, K: DataSet> KLV<'buf, K> {
                 if !key.expect_length(self.len()) {
                     Err(ParseError::UnexpectLength(self.len()))
                 } else {
-                    Ok(key.value(self.value()))
+                    key.value(self.value())
                 }
             }
             Err(x) => Err(x),
@@ -157,7 +164,7 @@ impl<'buf, K: DataSet> Iterator for KLVReader<'buf, K> {
 mod tests {
     use crate::klv::KLVReader;
 
-    use super::{DataSet, KLVRawReader};
+    use super::{DataSet, KLVRawReader, ParseError};
 
     #[test]
     fn test_iterator() {
@@ -190,11 +197,12 @@ mod tests {
                 _ => None,
             }
         }
-        fn value(&self, v: &[u8]) -> Self::Item {
-            match self {
+        fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
+            let v = match self {
                 DummyDataset::One => DummyValue::U8(v[0]),
                 DummyDataset::Two => DummyValue::U8(v[0]),
-            }
+            };
+            Ok(v)
         }
         fn expect_length(&self, len: usize) -> bool {
             match self {
