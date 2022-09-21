@@ -109,7 +109,7 @@ impl<'buf, K: DataSet> KLV<'buf, K> {
         }
     }
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.buf[1] as usize
     }
     #[inline]

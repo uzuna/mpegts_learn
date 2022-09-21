@@ -12,14 +12,16 @@ use mpeg2ts_reader::packet;
 use mpeg2ts_reader::packet::Pid;
 use mpeg2ts_reader::pes;
 use mpeg2ts_reader::pes::PesHeader;
-use mpeg2ts_reader::pes::Timestamp;
+
 use mpeg2ts_reader::psi;
 use mpeg2ts_reader::StreamType;
 use std::cmp;
 
 use std::fs::File;
 use std::io::Read;
-use std::time::Duration;
+
+
+
 
 // This macro invocation creates an enum called DumpFilterSwitch, encapsulating all possible ways
 // that this application may handle transport stream packets.  Each enum variant is just a wrapper
@@ -115,6 +117,7 @@ pub struct PtsDumpElementaryStreamConsumer {
     pid: packet::Pid,
     format: StreamType,
     len: Option<usize>,
+    buf: Vec<u8>,
 }
 impl PtsDumpElementaryStreamConsumer {
     fn construct(
@@ -125,6 +128,7 @@ impl PtsDumpElementaryStreamConsumer {
             pid: stream_info.elementary_pid(),
             format: stream_info.stream_type(),
             len: None,
+            buf: vec![],
         });
         DumpFilterSwitch::Pes(filter)
     }
@@ -136,23 +140,24 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
     fn begin_packet(&mut self, _ctx: &mut DumpDemuxContext, header: pes::PesHeader) {
         match header.contents() {
             pes::PesContents::Parsed(Some(parsed)) => {
-                match parsed.pts_dts() {
-                    Ok(pes::PtsDts::PtsOnly(Ok(pts))) => {
-                        print!("{:?}: pts {:#08x}                ", self.pid, pts.value())
-                    }
-                    Ok(pes::PtsDts::Both {
-                        pts: Ok(pts),
-                        dts: Ok(dts),
-                    }) => print!(
-                        "{:?}: pts {:?} sec dts {:?} ",
-                        self.pid,
-                        Duration::from_secs_f64(pts.value() as f64 / Timestamp::TIMEBASE as f64),
-                        Duration::from_secs_f64(dts.value() as f64 / Timestamp::TIMEBASE as f64),
-                    ),
-                    _ => (),
-                }
+                // match parsed.pts_dts() {
+                //     Ok(pes::PtsDts::PtsOnly(Ok(pts))) => {
+                //         println!("{:?}: pts {:#08x}                ", self.pid, pts.value())
+                //     }
+                //     Ok(pes::PtsDts::Both {
+                //         pts: Ok(pts),
+                //         dts: Ok(dts),
+                //     }) => println!(
+                //         "{:?}: pts {:?} sec dts {:?} ",
+                //         self.pid,
+                //         Duration::from_secs_f64(pts.value() as f64 / Timestamp::TIMEBASE as f64),
+                //         Duration::from_secs_f64(dts.value() as f64 / Timestamp::TIMEBASE as f64),
+                //     ),
+                //     _ => (),
+                // }
                 let payload = parsed.payload();
                 self.len = Some(payload.len());
+                self.buf.extend_from_slice(payload);
                 // println!(
                 //     "{:02x}",
                 //     payload[..cmp::min(payload.len(), 16)].plain_hex(false)
@@ -178,15 +183,29 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
         self.len = self.len.map(|l| l + data.len());
     }
     fn end_packet(&mut self, _ctx: &mut DumpDemuxContext) {
+        if self.format == StreamType::H264 {
+            return;
+        }
         println!(
             "{:?}: {:?} end of packet length={:?}",
             self.pid, self.format, self.len
         );
+        if self.format == StreamType::H2220PesPrivateData && self.len.unwrap_or(0) > 18 {
+            // key 0x81で始まる。長さは0x91以外のサンプルがない
+            // println!("byte {:02x?}", &self.buf[16..24]);
+            let len = self.buf[17] as usize;
+            let r = KLVReader::<uasdms::UASDataset>::from_bytes(&self.buf[18..18 + len]);
+            for x in r {
+                println!("uas ds {:?} {} {:?}", x.key(), x.len(), x.parse());
+            }
+        }
     }
     fn continuity_error(&mut self, _ctx: &mut DumpDemuxContext) {}
 }
 
 use structopt::StructOpt;
+
+use crate::klv::KLVReader;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mpegts-parse")]
@@ -237,13 +256,11 @@ fn main() {
                                     if len >= 16 {
                                         let key = &buf[..16];
                                         println!("pat {:?}, {:02x?}", pk.pid(), key);
-                                        let mut pos = 18;
-                                        while pos < len {
-                                            let tag = buf[pos];
-                                            let len = buf[pos + 1] as usize;
-                                            let val = &buf[pos + 2..pos + 2 + len];
-                                            pos += len + 2;
-                                            println!("  TLV {} {} {:02x?}", tag, len, val);
+                                        let r =
+                                            KLVReader::<uasdms::UASDataset>::from_bytes(&buf[18..]);
+
+                                        for x in r {
+                                            println!("uas ds {:?} {:?}", x.key(), x.parse());
                                         }
                                     }
                                 }

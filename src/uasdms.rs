@@ -7,8 +7,8 @@ use byteorder::{BigEndian, ReadBytesExt};
 
 use crate::klv::{DataSet, ParseError};
 
-#[derive(Debug, PartialEq)]
-enum Value {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Value {
     Timestamp(SystemTime),
     U8(u8),
     U16(u16),
@@ -19,7 +19,7 @@ enum Value {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum UASDataset {
+pub enum UASDataset {
     Checksum,
     Timestamp,
     LSVersionNumber,
