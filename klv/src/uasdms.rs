@@ -5,7 +5,7 @@ use std::{
 
 use byteorder::{BigEndian, ReadBytesExt};
 
-use crate::klv::{DataSet, ParseError};
+use crate::{DataSet, ParseError};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Value {
@@ -157,7 +157,7 @@ impl DataSet for UASDataset {
 
 #[cfg(test)]
 mod tests {
-    use crate::klv::KLVReader;
+    use crate::KLVReader;
 
     use super::{UASDataset, Value};
     use chrono::{DateTime, Utc};

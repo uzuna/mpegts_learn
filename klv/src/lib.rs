@@ -2,6 +2,9 @@
 
 use std::{borrow::Cow, fmt::Debug, marker::PhantomData};
 
+#[cfg(feature = "uasdms")]
+pub mod uasdms;
+
 /// KLVパース時に発生するエラーについて
 #[derive(Debug)]
 pub enum ParseError {
@@ -162,7 +165,7 @@ impl<'buf, K: DataSet> Iterator for KLVReader<'buf, K> {
 
 #[cfg(test)]
 mod tests {
-    use crate::klv::KLVReader;
+    use crate::KLVReader;
 
     use super::{DataSet, KLVRawReader, ParseError};
 

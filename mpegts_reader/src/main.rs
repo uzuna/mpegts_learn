@@ -2,9 +2,6 @@
 extern crate mpeg2ts_reader;
 extern crate hex_slice;
 
-mod klv;
-mod uasdms;
-
 use hex_slice::AsHex;
 
 use mpeg2ts_reader::demultiplex;
@@ -20,8 +17,9 @@ use std::cmp;
 use std::fs::File;
 use std::io::Read;
 
-
-
+use klv::uasdms::UASDataset;
+use klv::KLVReader;
+use structopt::StructOpt;
 
 // This macro invocation creates an enum called DumpFilterSwitch, encapsulating all possible ways
 // that this application may handle transport stream packets.  Each enum variant is just a wrapper
@@ -194,7 +192,7 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
             // key 0x81で始まる。長さは0x91以外のサンプルがない
             // println!("byte {:02x?}", &self.buf[16..24]);
             let len = self.buf[17] as usize;
-            let r = KLVReader::<uasdms::UASDataset>::from_bytes(&self.buf[18..18 + len]);
+            let r = KLVReader::<UASDataset>::from_bytes(&self.buf[18..18 + len]);
             for x in r {
                 println!("uas ds {:?} {} {:?}", x.key(), x.len(), x.parse());
             }
@@ -202,10 +200,6 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
     }
     fn continuity_error(&mut self, _ctx: &mut DumpDemuxContext) {}
 }
-
-use structopt::StructOpt;
-
-use crate::klv::KLVReader;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mpegts-parse")]
@@ -256,8 +250,7 @@ fn main() {
                                     if len >= 16 {
                                         let key = &buf[..16];
                                         println!("pat {:?}, {:02x?}", pk.pid(), key);
-                                        let r =
-                                            KLVReader::<uasdms::UASDataset>::from_bytes(&buf[18..]);
+                                        let r = KLVReader::<UASDataset>::from_bytes(&buf[18..]);
 
                                         for x in r {
                                             println!("uas ds {:?} {:?}", x.key(), x.parse());
