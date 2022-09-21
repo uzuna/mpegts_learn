@@ -13,6 +13,8 @@ enum Value {
     U8(u8),
     U16(u16),
     I16(i16),
+    I32(i32),
+    String(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,6 +37,10 @@ enum UASDataset {
     // Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
     // Res: ~1525 micro deg.
     PlatformRollAngle,
+    ImageSourceSensor,
+    ImageCoordinateSensor,
+    SensorLatitude,
+    SensorLongtude,
 }
 
 impl DataSet for UASDataset {
@@ -49,14 +55,19 @@ impl DataSet for UASDataset {
             5 => Some(UASDataset::PlatformHeadingAngle),
             6 => Some(UASDataset::PlatformPitchAngle),
             7 => Some(UASDataset::PlatformRollAngle),
+            11 => Some(UASDataset::ImageSourceSensor),
+            12 => Some(UASDataset::ImageCoordinateSensor),
+            13 => Some(UASDataset::SensorLatitude),
+            14 => Some(UASDataset::SensorLongtude),
             65 => Some(UASDataset::LSVersionNumber),
             _ => None,
         }
     }
 
     fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
+        use UASDataset::*;
         match self {
-            UASDataset::Timestamp => {
+            Timestamp => {
                 let mut rdr = Cursor::new(v);
                 let micros = rdr.read_u64::<BigEndian>().unwrap();
                 match SystemTime::UNIX_EPOCH.checked_add(Duration::from_micros(micros)) {
@@ -65,17 +76,25 @@ impl DataSet for UASDataset {
                 }
             }
             // TODO Change value to Degrees
-            UASDataset::PlatformHeadingAngle => {
+            PlatformHeadingAngle => {
                 let mut rdr = Cursor::new(v);
                 let angle = rdr.read_u16::<BigEndian>().unwrap();
                 Ok(Value::U16(angle))
             }
-            UASDataset::PlatformPitchAngle | UASDataset::PlatformRollAngle => {
+            PlatformPitchAngle | PlatformRollAngle => {
                 let mut rdr = Cursor::new(v);
                 let angle = rdr.read_i16::<BigEndian>().unwrap();
                 Ok(Value::I16(angle))
             }
-            UASDataset::LSVersionNumber => Ok(Value::U8(v[0])),
+            SensorLatitude | SensorLongtude => {
+                let mut rdr = Cursor::new(v);
+                let angle = rdr.read_i32::<BigEndian>().unwrap();
+                Ok(Value::I32(angle))
+            }
+            ImageSourceSensor | ImageCoordinateSensor => {
+                Ok(Value::String(String::from_utf8(v.to_owned()).unwrap()))
+            }
+            LSVersionNumber => Ok(Value::U8(v[0])),
         }
     }
 }
@@ -96,12 +115,21 @@ mod tests {
             5, 2, 0x3d, 0x3b,
             6, 2, 0x15, 0x80,
             7, 2, 0x01, 0x52,
+            11, 3, 0x45, 0x4f, 0x4e,
+            12, 14, 0x47, 0x65, 0x6f, 0x64, 0x65, 0x74, 0x69, 0x63, 0x20, 0x57, 0x47, 0x53, 0x38, 0x34,
+            13, 4, 0x4d, 0xc4, 0xdc, 0xbb,
+            14, 4, 0xb1, 0xa8, 0x6c, 0xfe,
             ];
 
         let klv = KLVReader::<UASDataset>::from_bytes(&buf);
 
         for x in klv {
-            let key = x.key().unwrap();
+            let key = x.key();
+            if key.is_err() {
+                println!("Error {:?}", key);
+                continue;
+            }
+            let key = key.unwrap();
             match (key, x.parse()) {
                 (UASDataset::Timestamp, Ok(Value::Timestamp(ts))) => {
                     let datetime: DateTime<Utc> = ts.into();
@@ -115,6 +143,15 @@ mod tests {
                 }
                 (UASDataset::PlatformHeadingAngle, Ok(Value::U16(angle))) => {
                     assert_eq!(angle, 15675);
+                }
+                (UASDataset::SensorLatitude, Ok(Value::I32(degrees))) => {
+                    assert_eq!(degrees, 1304747195);
+                }
+                (UASDataset::ImageSourceSensor, Ok(Value::String(name))) => {
+                    assert_eq!(&name, "EON");
+                }
+                (UASDataset::ImageCoordinateSensor, Ok(Value::String(name))) => {
+                    assert_eq!(&name, "Geodetic WGS84");
                 }
                 (k, v) => {
                     println!("debug {:?} {:?}", k, v)
