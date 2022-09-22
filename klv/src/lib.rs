@@ -115,6 +115,9 @@ impl<'buf, K: DataSet> KLV<'buf, K> {
     pub fn len(&self) -> usize {
         self.buf[1] as usize
     }
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
     #[inline]
     pub fn value(&self) -> &'buf [u8] {
         &self.buf[2..2 + self.len()]
