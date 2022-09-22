@@ -3,4 +3,5 @@
 members = [
     "klv",
     "mpegts_reader",
+    "gstapp",
 ]
