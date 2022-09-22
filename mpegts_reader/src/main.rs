@@ -4,6 +4,7 @@ extern crate hex_slice;
 
 use hex_slice::AsHex;
 
+use klv::uasdms::LS_UNIVERSAL_KEY0601_8_10;
 use mpeg2ts_reader::demultiplex;
 use mpeg2ts_reader::packet;
 use mpeg2ts_reader::packet::Pid;
@@ -18,7 +19,7 @@ use std::fs::File;
 use std::io::Read;
 
 use klv::uasdms::UASDataset;
-use klv::KLVReader;
+use klv::{KLVGlobal, KLVReader};
 use structopt::StructOpt;
 
 // This macro invocation creates an enum called DumpFilterSwitch, encapsulating all possible ways
@@ -246,14 +247,14 @@ fn main() {
                             match PesHeader::from_bytes(payload).unwrap().contents() {
                                 pes::PesContents::Parsed(Some(ppc)) => {
                                     let buf = ppc.payload();
-                                    let len = buf.len();
-                                    if len >= 16 {
-                                        let key = &buf[..16];
-                                        println!("pat {:?}, {:02x?}", pk.pid(), key);
-                                        let r = KLVReader::<UASDataset>::from_bytes(&buf[18..]);
+                                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {
+                                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                                            let r =
+                                                KLVReader::<UASDataset>::from_bytes(klvg.content());
 
-                                        for x in r {
-                                            println!("uas ds {:?} {:?}", x.key(), x.parse());
+                                            for x in r {
+                                                println!("uas ds {:?} {:?}", x.key(), x.parse());
+                                            }
                                         }
                                     }
                                 }

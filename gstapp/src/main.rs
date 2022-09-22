@@ -2,7 +2,7 @@ use gst::prelude::*;
 use gst_app::gst::element_error;
 use klv::{
     uasdms::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
-    KLVReader,
+    KLVGlobal, KLVReader,
 };
 use log::{info, warn};
 
@@ -83,16 +83,16 @@ fn main() {
                     let mut slice = vec![0; buffer.size()];
                     buffer.copy_to_slice(0, &mut slice).unwrap();
                     // Check UniversalKey
-                    if slice[..16] == LS_UNIVERSAL_KEY0601_8_10[..] {
-                        info!("KLV PTS: {:?}", &buffer.pts());
-                        // show data
-                        let len = slice[17] as usize;
-                        let r = KLVReader::<UASDataset>::from_bytes(&slice[18..18 + len]);
-                        for x in r {
-                            info!("  UAS {:?} {:?}", x.key(), x.parse());
+                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
+                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
+
+                            for x in r {
+                                println!("uas ds {:?} {:?}", x.key(), x.parse());
+                            }
+                        } else {
+                            warn!("unknown key {:?}", &slice[..16]);
                         }
-                    } else {
-                        warn!("unknown key {:?}", &slice[..16]);
                     }
                 }
                 Ok(gst::FlowSuccess::Ok)
