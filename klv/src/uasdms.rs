@@ -1,9 +1,9 @@
 use std::{
-    io::Cursor,
+    io::{self, Cursor},
     time::{Duration, SystemTime},
 };
 
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 
 use crate::{DataSet, ParseError};
 
@@ -20,6 +20,70 @@ pub enum Value {
     I16(i16),
     I32(i32),
     String(String),
+}
+
+impl From<u8> for Value {
+    fn from(x: u8) -> Self {
+        Value::U8(x)
+    }
+}
+
+impl Value {
+    fn to_i16(x: &[u8]) -> Self {
+        Value::I16(BigEndian::read_i16(x))
+    }
+    fn to_i32(x: &[u8]) -> Self {
+        Value::I32(BigEndian::read_i32(x))
+    }
+    fn to_string(x: &[u8]) -> Self {
+        Value::String(String::from_utf8(x.to_owned()).unwrap())
+    }
+    fn to_timestamp(x: &[u8]) -> Result<Self, ParseError> {
+        let micros = BigEndian::read_u64(x);
+        match SystemTime::UNIX_EPOCH.checked_add(Duration::from_micros(micros)) {
+            Some(ts) => Ok(Value::Timestamp(ts)),
+            None => Err(ParseError::ValueError("failed to parse timestamp.".into())),
+        }
+    }
+    fn to_u16(x: &[u8]) -> Self {
+        Value::U16(BigEndian::read_u16(x))
+    }
+    fn to_u32(x: &[u8]) -> Self {
+        Value::U32(BigEndian::read_u32(x))
+    }
+
+    fn write(&self, mut buf: &mut [u8]) -> io::Result<usize> {
+        use std::io::Write;
+        use Value::*;
+        match self {
+            Timestamp(x) => {
+                let micros = x
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros();
+                BigEndian::write_u64(buf, micros as u64);
+                Ok(8)
+            }
+            U8(x) => buf.write(&[*x]),
+            U16(x) => {
+                BigEndian::write_u16(buf, *x);
+                Ok(2)
+            }
+            U32(x) => {
+                BigEndian::write_u32(buf, *x);
+                Ok(4)
+            }
+            I16(x) => {
+                BigEndian::write_i16(buf, *x);
+                Ok(2)
+            }
+            I32(x) => {
+                BigEndian::write_i32(buf, *x);
+                Ok(4)
+            }
+            String(s) => buf.write(s.as_bytes()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -109,31 +173,16 @@ impl DataSet for UASDataset {
     fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
         use UASDataset::*;
         match self {
-            Timestamp => {
-                let mut rdr = Cursor::new(v);
-                let micros = rdr.read_u64::<BigEndian>().unwrap();
-                match SystemTime::UNIX_EPOCH.checked_add(Duration::from_micros(micros)) {
-                    Some(ts) => Ok(Value::Timestamp(ts)),
-                    None => Err(ParseError::ValueError("failed to parse timestamp.".into())),
-                }
-            }
-            PlatformGroundSpeed => Ok(Value::U8(v[0])),
+            Timestamp => Value::to_timestamp(v),
+            PlatformGroundSpeed | LSVersionNumber => Ok(Value::from(v[0])),
             Checksum
             | PlatformHeadingAngle
             | SensorTrueAltitude
             | SensorHorizontalFOV
             | SensorVerticalFOV
             | FrameCenterElevation
-            | TargetLocationElevation => {
-                let mut rdr = Cursor::new(v);
-                let angle = rdr.read_u16::<BigEndian>().unwrap();
-                Ok(Value::U16(angle))
-            }
-            PlatformPitchAngle | PlatformRollAngle => {
-                let mut rdr = Cursor::new(v);
-                let angle = rdr.read_i16::<BigEndian>().unwrap();
-                Ok(Value::I16(angle))
-            }
+            | TargetLocationElevation => Ok(Value::to_u16(v)),
+            PlatformPitchAngle | PlatformRollAngle => Ok(Value::to_i16(v)),
             SensorLatitude
             | SensorLongtude
             | SensorRelativeElevationAngle
@@ -141,26 +190,19 @@ impl DataSet for UASDataset {
             | FrameCenterLatitude
             | FrameCenterLongitude
             | TargetLocationLatitude
-            | TargetLocationLongitude => {
-                let mut rdr = Cursor::new(v);
-                let angle = rdr.read_i32::<BigEndian>().unwrap();
-                Ok(Value::I32(angle))
-            }
+            | TargetLocationLongitude => Ok(Value::to_i32(v)),
             SensorRelativeAzimuthAngle | SlantRange | TargetWidth | GroundRange => {
-                let mut rdr = Cursor::new(v);
-                let angle = rdr.read_u32::<BigEndian>().unwrap();
-                Ok(Value::U32(angle))
+                Ok(Value::to_u32(v))
             }
-            ImageSourceSensor | ImageCoordinateSensor => {
-                Ok(Value::String(String::from_utf8(v.to_owned()).unwrap()))
-            }
-            LSVersionNumber => Ok(Value::U8(v[0])),
+            ImageSourceSensor | ImageCoordinateSensor => Ok(Value::to_string(v)),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use crate::KLVReader;
 
     use super::{UASDataset, Value};
@@ -232,6 +274,49 @@ mod tests {
                 }
                 (k, v) => {
                     println!("debug {:?} {:?}", k, v)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_value_encode_decode() {
+        let td = [
+            Value::U8(0),
+            Value::U8(255),
+            Value::U16(256),
+            Value::U32(192),
+            Value::I16(-127),
+            Value::I32(-192),
+            Value::String("EON_$JK)~DFKSDF".to_owned()),
+            Value::Timestamp(SystemTime::now()),
+        ];
+        for x in td {
+            let mut buf = vec![];
+            let size = x.write(&mut buf).unwrap();
+            assert_eq!(buf.len(), size);
+
+            match x {
+                Value::Timestamp(x) => {
+                    assert_eq!(Value::Timestamp(x), Value::to_timestamp(&buf).unwrap());
+                }
+                Value::U8(x) => {
+                    assert_eq!(Value::U8(x), Value::from(buf[0]));
+                }
+                Value::U16(x) => {
+                    assert_eq!(Value::U16(x), Value::to_u16(&buf));
+                }
+                Value::U32(x) => {
+                    assert_eq!(Value::U32(x), Value::to_u32(&buf));
+                }
+                Value::I16(x) => {
+                    assert_eq!(Value::I16(x), Value::to_i16(&buf));
+                }
+                Value::I32(x) => {
+                    assert_eq!(Value::I32(x), Value::to_i32(&buf));
+                }
+                Value::String(x) => {
+                    assert_eq!(Value::String(x), Value::to_string(&buf));
                 }
             }
         }
