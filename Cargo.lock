@@ -336,10 +336,13 @@ dependencies = [
 name = "gstapp"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
  "glib",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-base",
+ "klv",
+ "log",
  "once_cell",
 ]
 
