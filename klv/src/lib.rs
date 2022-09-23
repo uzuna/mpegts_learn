@@ -1,6 +1,6 @@
 //! BER encoding parser
 
-use std::{borrow::Cow, fmt::Debug, marker::PhantomData};
+use std::{borrow::Cow, fmt::Debug, io::Write, marker::PhantomData};
 
 use byteorder::ByteOrder;
 
@@ -90,7 +90,7 @@ impl LengthOctet {
             Self::Long(b & Self::BIT_MASK)
         }
     }
-    #[cfg(test)]
+
     fn length_to_buf(buf: &mut dyn std::io::Write, size: usize) -> std::io::Result<usize> {
         use byteorder::BigEndian;
         if size <= 127 {
@@ -107,6 +107,18 @@ impl LengthOctet {
             buf.write(&r)
         }
     }
+}
+
+#[allow(non_snake_case)]
+pub fn write_KLVGloval<W: Write>(
+    mut buf: W,
+    key: &[u8; 16],
+    content: &[u8],
+) -> std::io::Result<usize> {
+    buf.write_all(key)?;
+    let length_len = LengthOctet::length_to_buf(&mut buf, content.len())?;
+    let content_len = buf.write(content)?;
+    Ok(16 + length_len + content_len)
 }
 
 pub struct KLVRaw<'buf>(&'buf [u8]);
@@ -261,8 +273,16 @@ impl<'buf, K: DataSet> Iterator for KLVReader<'buf, K> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use byteorder::ByteOrder;
+
     use super::{DataSet, KLVRawReader, ParseError};
-    use crate::{KLVGlobal, KLVReader, LengthOctet};
+    use crate::{write_KLVGloval, KLVGlobal, KLVReader, LengthOctet};
+
+    const DUMMY_DATASET_KEY: [u8; 16] = [
+        0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0,
+    ];
 
     #[test]
     fn test_length_octets() {
@@ -325,12 +345,40 @@ mod tests {
     #[derive(Debug, PartialEq, Eq)]
     enum DummyValue {
         U8(u8),
+        U16(u16),
+    }
+
+    impl DummyValue {
+        fn to_bytes<W: Write>(&self, mut buf: W) -> std::io::Result<usize> {
+            match self {
+                Self::U8(x) => {
+                    LengthOctet::length_to_buf(&mut buf, 1)?;
+                    buf.write(&[*x])?;
+                    Ok(2)
+                }
+                Self::U16(x) => {
+                    LengthOctet::length_to_buf(&mut buf, 2)?;
+                    let mut data: [u8; 2] = [0; 2];
+                    byteorder::BigEndian::write_u16(&mut data, *x);
+                    buf.write_all(&data)?;
+                    Ok(3)
+                }
+            }
+        }
     }
 
     #[derive(Debug, PartialEq, Eq)]
     enum DummyDataset {
         One,
         Two,
+    }
+    impl DummyDataset {
+        fn to_byte(&self) -> u8 {
+            match self {
+                DummyDataset::One => 1,
+                DummyDataset::Two => 2,
+            }
+        }
     }
     impl DataSet for DummyDataset {
         type Item = DummyValue;
@@ -344,7 +392,7 @@ mod tests {
         fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
             let v = match self {
                 DummyDataset::One => DummyValue::U8(v[0]),
-                DummyDataset::Two => DummyValue::U8(v[0]),
+                DummyDataset::Two => DummyValue::U16(byteorder::BigEndian::read_u16(v)),
             };
             Ok(v)
         }
@@ -360,14 +408,41 @@ mod tests {
     fn test_klv() {
         let expects = vec![
             (DummyDataset::One, DummyValue::U8(0)),
-            (DummyDataset::Two, DummyValue::U8(13)),
+            (DummyDataset::Two, DummyValue::U16(13)),
         ];
-        let buf = vec![1, 1, 0, 2, 2, 13, 45];
+        let buf = vec![1, 1, 0, 2, 2, 0, 13];
         let r = KLVReader::<DummyDataset>::from_bytes(&buf);
 
         for (i, v) in r.enumerate() {
             assert_eq!(expects[i].0, v.key().unwrap());
             assert_eq!(expects[i].1, v.parse().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_klv_write() {
+        let data = vec![
+            (DummyDataset::One, DummyValue::U8(127)),
+            (DummyDataset::Two, DummyValue::U16(42)),
+        ];
+        let mut content = std::io::Cursor::new(vec![]);
+        for (key, val) in data.iter() {
+            content.write_all(&[key.to_byte()]).unwrap();
+            val.to_bytes(&mut content).unwrap();
+        }
+        assert_eq!(&[1, 1, 127, 2, 2, 0, 42][..], content.get_ref());
+        let mut buf = std::io::Cursor::new(vec![]);
+        let size = write_KLVGloval(&mut buf, &DUMMY_DATASET_KEY, content.get_ref()).unwrap();
+        assert_eq!(16 + 1 + content.get_ref().len(), size);
+
+        // decode
+        let klvg = KLVGlobal::from_bytes(buf.get_ref());
+        assert_eq!(klvg.content(), content.get_ref());
+        let r = KLVReader::<DummyDataset>::from_bytes(content.get_ref());
+
+        for (id, record) in r.enumerate() {
+            assert_eq!(record.key().unwrap(), data[id].0);
+            assert_eq!(record.parse().unwrap(), data[id].1);
         }
     }
 }
