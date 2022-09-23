@@ -1,9 +1,6 @@
-use std::{
-    io::{self, Cursor},
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 
 use crate::{DataSet, ParseError};
 
@@ -52,7 +49,8 @@ impl Value {
         Value::U32(BigEndian::read_u32(x))
     }
 
-    fn write(&self, mut buf: &mut [u8]) -> io::Result<usize> {
+    #[cfg(test)]
+    fn to_bytes(&self, mut buf: &mut [u8]) -> std::io::Result<usize> {
         use std::io::Write;
         use Value::*;
         match self {
@@ -293,7 +291,7 @@ mod tests {
         ];
         for x in td {
             let mut buf = vec![];
-            let size = x.write(&mut buf).unwrap();
+            let size = x.to_bytes(&mut buf).unwrap();
             assert_eq!(buf.len(), size);
 
             match x {

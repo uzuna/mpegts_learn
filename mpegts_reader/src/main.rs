@@ -162,7 +162,7 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
                 //     payload[..cmp::min(payload.len(), 16)].plain_hex(false)
                 // )
             }
-            pes::PesContents::Parsed(None) => (println!("parsed")),
+            pes::PesContents::Parsed(None) => println!("parsed"),
             pes::PesContents::Payload(payload) => {
                 self.len = Some(payload.len());
                 println!(
@@ -235,7 +235,7 @@ fn main() {
             n => {
                 if opt.raw {
                     println!("read buf {}", n);
-                    let itr = (&buf[0..n])
+                    let itr = buf[0..n]
                         .chunks_exact(packet::Packet::SIZE)
                         .map(packet::Packet::try_new);
 
@@ -247,7 +247,7 @@ fn main() {
                             match PesHeader::from_bytes(payload).unwrap().contents() {
                                 pes::PesContents::Parsed(Some(ppc)) => {
                                     let buf = ppc.payload();
-                                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {
+                                    if let Ok(klvg) = KLVGlobal::try_from_bytes(buf) {
                                         if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
                                             let r =
                                                 KLVReader::<UASDataset>::from_bytes(klvg.content());

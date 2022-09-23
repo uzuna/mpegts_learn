@@ -353,7 +353,7 @@ mod tests {
             match self {
                 Self::U8(x) => {
                     LengthOctet::length_to_buf(&mut buf, 1)?;
-                    buf.write(&[*x])?;
+                    buf.write_all(&[*x])?;
                     Ok(2)
                 }
                 Self::U16(x) => {
