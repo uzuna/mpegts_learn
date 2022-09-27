@@ -154,10 +154,11 @@ fn include_klv() {
         .downcast::<gst_app::AppSrc>()
         .unwrap();
     let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", "true")
+        .field("parsed", true)
         .build();
 
     appsrc.set_caps(Some(&klv_caps));
+    appsrc.set_format(gst::Format::Time);
     let mut i = 0;
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
@@ -166,7 +167,7 @@ fn include_klv() {
                 let mut buffer = gst::Buffer::with_size(6).unwrap();
                 {
                     let buffer = buffer.get_mut().unwrap();
-                    println!("Producing buffer {}", buffer.size());
+                    info!("appsrc Producing buffer {}", buffer.size());
                     buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
                     buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
                 }
@@ -209,10 +210,13 @@ fn include_klv() {
     let mpegtsmux_sink = mpegtsmux.request_pad_simple("sink_%d").unwrap();
     h264parse_src_pad.link(&mpegtsmux_sink).unwrap();
 
-    let mpegtsmux_sink_klv = mpegtsmux.request_pad_simple("sink_%d").unwrap();
-    let appsrc_pad = appsrc.static_pad("src").unwrap();
-    appsrc_pad.link(&mpegtsmux_sink_klv).unwrap();
-    // appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
+    // wrong hierarchy
+    // let mpegtsmux_sink_klv = mpegtsmux.request_pad_simple("sink_%d").unwrap();
+    // let appsrc_pad = appsrc.static_pad("src").unwrap();
+    // appsrc_pad.link(&mpegtsmux_sink_klv).unwrap();
+
+    // not link
+    appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
 
     let h264_sink_pad = h264parse_dest
         .static_pad("sink")
@@ -265,19 +269,32 @@ fn include_klv() {
 fn only_klv() {
     gst::init().unwrap();
     let pipeline = gst::Pipeline::new(None);
+    let videosrc = gst::ElementFactory::make("videotestsrc", None).unwrap();
+    let x264enc = gst::ElementFactory::make("x264enc", None).unwrap();
+    let h264parse = gst::ElementFactory::make("h264parse", None).unwrap();
     let mpegtsmux = gst::ElementFactory::make("mpegtsmux", None).unwrap();
     let tsdemux = gst::ElementFactory::make("tsdemux", None).unwrap();
     let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
+    let fakesink2 = gst::ElementFactory::make("fakesink", None).unwrap();
 
     let appsrc = gst::ElementFactory::make("appsrc", None)
         .unwrap()
         .downcast::<gst_app::AppSrc>()
         .unwrap();
+
+    let videosrc_caps = gst::Caps::builder("video/x-raw")
+        .field("width", 320)
+        .field("height", 240)
+        // .field("framerate", "30/1")
+        .field("format", "I420")
+        .build();
+
     let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", "true")
+        .field("parsed", true)
         .build();
 
     appsrc.set_caps(Some(&klv_caps));
+    appsrc.set_format(gst::Format::Time);
     let mut i = 0;
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
@@ -286,9 +303,8 @@ fn only_klv() {
                 let mut buffer = gst::Buffer::with_size(6).unwrap();
                 {
                     let buffer = buffer.get_mut().unwrap();
-                    println!("Producing buffer {}", buffer.size());
                     buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    // buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
                 }
                 i += 1;
 
@@ -300,25 +316,35 @@ fn only_klv() {
 
     pipeline.add(&appsrc).unwrap();
     pipeline
-        .add_many(&[&mpegtsmux, &tsdemux, &fakesink])
+        .add_many(&[
+            &videosrc, &h264parse, &x264enc, &mpegtsmux, &tsdemux, &fakesink, &fakesink2,
+        ])
         .unwrap();
 
+    videosrc.link_filtered(&x264enc, &videosrc_caps).unwrap();
+    x264enc.link(&h264parse).unwrap();
+
+    // WasLinkedが出てしまう
+    h264parse.link(&mpegtsmux).unwrap();
+
     gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
-    let mpegtsmux_sink_klv = mpegtsmux.request_pad_simple("sink_%d").unwrap();
-    let appsrc_pad = appsrc.static_pad("src").unwrap();
-    appsrc_pad.link(&mpegtsmux_sink_klv).unwrap();
-    // appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
+    appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
 
     let fakesink_pad = fakesink
         .static_pad("sink")
         .expect("failed to get fakesink pad.");
 
+    let fakesink2_pad = fakesink2
+        .static_pad("sink")
+        .expect("failed to get fakesink pad.");
+
     tsdemux.connect_pad_added(move |src, src_pad| {
         info!("Received new pad {} from {}", src_pad.name(), src.name());
-        src_pad.link(&fakesink_pad).unwrap();
-        // if src_pad.name().contains("video") {
-        //     src_pad.link(&h264_sink_pad).unwrap();
-        // }
+        if src_pad.name().contains("video") {
+            src_pad.link(&fakesink_pad).unwrap();
+        } else {
+            src_pad.link(&fakesink2_pad).unwrap();
+        }
     });
 
     // Actually start the pipeline.
@@ -356,8 +382,7 @@ fn only_klv() {
         .expect("Unable to set the pipeline to the `Null` state");
 }
 
-
-fn only_fake(){
+fn only_fake() {
     // TODO Appsrcがcaps通じてnego出来るのを確認する
     // app src sinkの対から
     // appsrc 固定sink
@@ -366,7 +391,7 @@ fn only_fake(){
 
     let pipeline = gst::Pipeline::new(None);
     let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", "true")
+        .field("parsed", true)
         .build();
 
     let appsrc = gst::ElementFactory::make("appsrc", None)
@@ -378,22 +403,22 @@ fn only_fake(){
         .unwrap()
         .downcast::<gst_app::AppSink>()
         .unwrap();
-    
+
     let mut i = 0;
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
                 if i > 5 {
                     let _ = appsrc.end_of_stream();
-                    return
+                    return;
                 }
                 // Add a custom meta with a label to this buffer.
                 let mut buffer = gst::Buffer::with_size(6).unwrap();
                 {
                     let buffer = buffer.get_mut().unwrap();
-                    println!("Producing buffer {}", buffer.size());
+                    info!("Producing buffer {}", buffer.size());
                     buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    // buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
                 }
                 i += 1;
 
@@ -405,6 +430,8 @@ fn only_fake(){
 
     // build appsink
     appsink.set_caps(Some(&klv_caps));
+    println!("{:?}", appsrc.caps());
+    println!("{:?}", appsink.caps());
     appsink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
             // Add a handler to the "new-sample" signal.
@@ -435,6 +462,8 @@ fn only_fake(){
                         } else {
                             warn!("unknown key {:?}", &slice[..16]);
                         }
+                    } else {
+                        info!("sink: Producing buffer {}", buffer.size());
                     }
                 }
                 Ok(gst::FlowSuccess::Ok)
@@ -445,7 +474,6 @@ fn only_fake(){
     pipeline.add(&appsrc).unwrap();
     pipeline.add(&appsink).unwrap();
     appsrc.link(&appsink).unwrap();
-
 
     // Actually start the pipeline.
     pipeline
