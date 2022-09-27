@@ -274,13 +274,13 @@ fn only_klv() {
     let h264parse = gst::ElementFactory::make("h264parse", None).unwrap();
     let mpegtsmux = gst::ElementFactory::make("mpegtsmux", None).unwrap();
     let tsdemux = gst::ElementFactory::make("tsdemux", None).unwrap();
+    let queue = gst::ElementFactory::make("queue", None).unwrap();
     let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
 
     let h264parse_dest = gst::ElementFactory::make("h264parse", None).unwrap();
     let avdec_h264 = gst::ElementFactory::make("avdec_h264", None).unwrap();
     let videoconvert = gst::ElementFactory::make("videoconvert", None).unwrap();
     let ximagesink = gst::ElementFactory::make("ximagesink", None).unwrap();
-    let queue = gst::ElementFactory::make("queue", None).unwrap();
 
     let appsrc = gst::ElementFactory::make("appsrc", None)
         .unwrap()
@@ -298,6 +298,52 @@ fn only_klv() {
         .field("parsed", true)
         .build();
 
+    let appsink = gst::ElementFactory::make("appsink", None)
+        .unwrap()
+        .downcast::<gst_app::AppSink>()
+        .unwrap();
+
+    // build appsink
+    appsink.set_caps(Some(&klv_caps));
+    appsink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            // Add a handler to the "new-sample" signal.
+            .new_sample(|appsink| {
+                // Pull the sample in question out of the appsink's buffer.
+                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                let buffer = sample.buffer().ok_or_else(|| {
+                    element_error!(
+                        appsink,
+                        gst::ResourceError::Failed,
+                        ("Failed to get buffer from appsink")
+                    );
+
+                    gst::FlowError::Error
+                })?;
+
+                if buffer.size() > 0 {
+                    let mut slice = vec![0; buffer.size()];
+                    buffer.copy_to_slice(0, &mut slice).unwrap();
+                    // Check UniversalKey
+                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
+                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
+
+                            for x in r {
+                                println!("uas ds {:?} {:?}", x.key(), x.parse());
+                            }
+                        } else {
+                            warn!("unknown key {:?}", &slice[..16]);
+                        }
+                    } else {
+                        info!("sink: Producing buffer {}", buffer.size());
+                    }
+                }
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+
     appsrc.set_caps(Some(&klv_caps));
     appsrc.set_format(gst::Format::Time);
     let mut i = 0;
@@ -310,6 +356,7 @@ fn only_klv() {
                     let buffer = buffer.get_mut().unwrap();
                     buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
                     buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                    info!("sending buffer: {}", buffer.size());
                 }
                 i += 1;
 
@@ -320,6 +367,7 @@ fn only_klv() {
     );
 
     pipeline.add(&appsrc).unwrap();
+    pipeline.add(&appsink).unwrap();
     pipeline
         .add_many(&[
             &videosrc,
@@ -327,7 +375,7 @@ fn only_klv() {
             &x264enc,
             &mpegtsmux,
             &tsdemux,
-            // &queue,
+            &queue,
             // &fakesink,
             &h264parse_dest,
             &avdec_h264,
@@ -338,16 +386,18 @@ fn only_klv() {
 
     videosrc.link_filtered(&x264enc, &videosrc_caps).unwrap();
     x264enc.link(&h264parse).unwrap();
-    // queue.link(&fakesink).unwrap();
 
     h264parse.link(&mpegtsmux).unwrap();
     gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
     appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
     gst::Element::link_many(&[&h264parse_dest, &avdec_h264, &videoconvert, &ximagesink]).unwrap();
+    queue.link(&appsink).unwrap();
 
     let h264_sink_pad = h264parse_dest
         .static_pad("sink")
         .expect("h264 could not be linked.");
+
+    // let pipeline_weak = pipeline.downgrade();
 
     tsdemux.connect_pad_added(move |src, src_pad| {
         info!("Received new pad {} from {}", src_pad.name(), src.name());
@@ -358,6 +408,20 @@ fn only_klv() {
                 .static_pad("sink")
                 .expect("failed to get fakesink pad.");
             src_pad.link(&fakesink_pad).unwrap();
+
+            // let pipeline = match pipeline_weak.upgrade() {
+            //     Some(pipeline) => pipeline,
+            //     None => return,
+            // };
+            // let queue = gst::ElementFactory::make("queue", None).unwrap();
+            // let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
+            // pipeline.add(&queue).unwrap();
+            // pipeline.add(&fakesink).unwrap();
+            // queue.link(&fakesink).unwrap();
+            // let fakesink_pad = queue
+            //     .static_pad("sink")
+            //     .expect("failed to get fakesink pad.");
+            // src_pad.link(&fakesink_pad).unwrap();
         }
     });
 
@@ -444,8 +508,6 @@ fn only_fake() {
 
     // build appsink
     appsink.set_caps(Some(&klv_caps));
-    println!("{:?}", appsrc.caps());
-    println!("{:?}", appsink.caps());
     appsink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
             // Add a handler to the "new-sample" signal.
