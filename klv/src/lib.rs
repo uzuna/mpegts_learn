@@ -91,7 +91,19 @@ impl LengthOctet {
         }
     }
 
-    fn length_to_buf(buf: &mut dyn std::io::Write, size: usize) -> std::io::Result<usize> {
+    pub fn encode_len(size: usize) -> usize {
+        if size <= 127 {
+            1
+        } else if size <= u8::MAX as usize {
+            2
+        } else if size <= u16::MAX as usize {
+            3
+        } else {
+            5
+        }
+    }
+
+    pub fn length_to_buf(buf: &mut dyn std::io::Write, size: usize) -> std::io::Result<usize> {
         use byteorder::BigEndian;
         if size <= 127 {
             buf.write(&[size as u8])

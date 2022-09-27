@@ -1,8 +1,11 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    io::Write,
+    time::{Duration, SystemTime},
+};
 
 use byteorder::{BigEndian, ByteOrder};
 
-use crate::{DataSet, ParseError};
+use crate::{DataSet, LengthOctet, ParseError};
 
 pub const LS_UNIVERSAL_KEY0601_8_10: [u8; 16] = [
     0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00,
@@ -26,32 +29,30 @@ impl From<u8> for Value {
 }
 
 impl Value {
-    fn to_i16(x: &[u8]) -> Self {
+    fn as_i16(x: &[u8]) -> Self {
         Value::I16(BigEndian::read_i16(x))
     }
-    fn to_i32(x: &[u8]) -> Self {
+    fn as_i32(x: &[u8]) -> Self {
         Value::I32(BigEndian::read_i32(x))
     }
-    fn to_string(x: &[u8]) -> Self {
+    fn as_string(x: &[u8]) -> Self {
         Value::String(String::from_utf8(x.to_owned()).unwrap())
     }
-    fn to_timestamp(x: &[u8]) -> Result<Self, ParseError> {
+    fn as_timestamp(x: &[u8]) -> Result<Self, ParseError> {
         let micros = BigEndian::read_u64(x);
         match SystemTime::UNIX_EPOCH.checked_add(Duration::from_micros(micros)) {
             Some(ts) => Ok(Value::Timestamp(ts)),
             None => Err(ParseError::ValueError("failed to parse timestamp.".into())),
         }
     }
-    fn to_u16(x: &[u8]) -> Self {
+    fn as_u16(x: &[u8]) -> Self {
         Value::U16(BigEndian::read_u16(x))
     }
-    fn to_u32(x: &[u8]) -> Self {
+    fn as_u32(x: &[u8]) -> Self {
         Value::U32(BigEndian::read_u32(x))
     }
 
-    #[cfg(test)]
     fn to_bytes(&self, mut buf: &mut [u8]) -> std::io::Result<usize> {
-        use std::io::Write;
         use Value::*;
         match self {
             Timestamp(x) => {
@@ -60,73 +61,111 @@ impl Value {
                     .unwrap()
                     .as_micros();
                 BigEndian::write_u64(buf, micros as u64);
-                Ok(8)
             }
-            U8(x) => buf.write(&[*x]),
+            U8(x) => {
+                buf.write_all(&[*x])?;
+            }
             U16(x) => {
                 BigEndian::write_u16(buf, *x);
-                Ok(2)
             }
             U32(x) => {
                 BigEndian::write_u32(buf, *x);
-                Ok(4)
             }
             I16(x) => {
                 BigEndian::write_i16(buf, *x);
-                Ok(2)
             }
             I32(x) => {
                 BigEndian::write_i32(buf, *x);
-                Ok(4)
             }
-            String(s) => buf.write(s.as_bytes()),
+            String(s) => {
+                buf.write_all(s.as_bytes())?;
+            }
+        }
+        Ok(self.len())
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        match self {
+            Value::Timestamp(_) => 8,
+            Value::U8(_) => 1,
+            Value::U16(_) => 2,
+            Value::U32(_) => 4,
+            Value::I16(_) => 2,
+            Value::I32(_) => 4,
+            Value::String(x) => x.len(),
         }
     }
 }
 
+#[repr(u8)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum UASDataset {
-    Checksum,
-    Timestamp,
-    LSVersionNumber,
+    Checksum = 1,
+    Timestamp = 2,
     // Relative between longitudinal axis and True North measured in the horizontal plane.
     // Map 0..(2^16-1) to 0..360.
     // Resolution: ~5.5 milli degrees.
-    PlatformHeadingAngle,
+    PlatformHeadingAngle = 5,
     // Angle between longitudinal axis and horizontal plane.
     // Positive angles above horizontal plane.
     // Map -(2^15-1)..(2^15-1) to +/-20.
     // Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
     // Resolution: ~610 micro degrees.
-    PlatformPitchAngle,
+    PlatformPitchAngle = 6,
     // Angle between transverse axis and transvers-longitudinal plane.
     // Positive angles for lowered right wing.
     // Map (-2^15-1)..(2^15-1) to +/-50.
     // Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
     // Res: ~1525 micro deg.
-    PlatformRollAngle,
-    ImageSourceSensor,
-    ImageCoordinateSensor,
-    SensorLatitude,
-    SensorLongtude,
-    SensorTrueAltitude,
-    SensorHorizontalFOV,
-    SensorVerticalFOV,
-    SensorRelativeAzimuthAngle,
-    SensorRelativeElevationAngle,
-    SensorRelativeRollAngle,
-    SlantRange,
+    PlatformRollAngle = 7,
+    ImageSourceSensor = 11,
+    ImageCoordinateSensor = 12,
+    SensorLatitude = 13,
+    SensorLongtude = 14,
+    SensorTrueAltitude = 15,
+    SensorHorizontalFOV = 16,
+    SensorVerticalFOV = 17,
+    SensorRelativeAzimuthAngle = 18,
+    SensorRelativeElevationAngle = 19,
+    SensorRelativeRollAngle = 20,
+    SlantRange = 21,
     // ST 0601.8の仕様書ではではu16だがテストデータでは4バイトだったのでu32とする
-    TargetWidth,
-    FrameCenterLatitude,
-    FrameCenterLongitude,
-    FrameCenterElevation,
-    TargetLocationLatitude,
-    TargetLocationLongitude,
-    TargetLocationElevation,
+    TargetWidth = 22,
+    FrameCenterLatitude = 23,
+    FrameCenterLongitude = 24,
+    FrameCenterElevation = 25,
+    TargetLocationLatitude = 40,
+    TargetLocationLongitude = 41,
+    TargetLocationElevation = 42,
     // Meters/Second
-    PlatformGroundSpeed,
-    GroundRange,
+    PlatformGroundSpeed = 56,
+    GroundRange = 57,
+    LSVersionNumber = 65,
+}
+impl TryFrom<u8> for UASDataset {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        use UASDataset::*;
+        match value {
+            x if x == Checksum as u8 => Ok(Checksum),
+            x if x == Timestamp as u8 => Ok(Timestamp),
+            x if x == PlatformHeadingAngle as u8 => Ok(PlatformHeadingAngle),
+            x if x == PlatformPitchAngle as u8 => Ok(PlatformPitchAngle),
+            x if x == PlatformRollAngle as u8 => Ok(PlatformRollAngle),
+            x if x == PlatformPitchAngle as u8 && x <= FrameCenterElevation as u8 => {
+                Ok(unsafe { std::mem::transmute(x) })
+            }
+            x if x >= TargetLocationLatitude as u8 && x <= TargetLocationElevation as u8 => {
+                Ok(unsafe { std::mem::transmute(x) })
+            }
+            x if x == PlatformGroundSpeed as u8 => Ok(PlatformGroundSpeed),
+            x if x == GroundRange as u8 => Ok(GroundRange),
+            x if x == LSVersionNumber as u8 => Ok(LSVersionNumber),
+            _ => Err(()),
+        }
+    }
 }
 
 impl DataSet for UASDataset {
@@ -136,51 +175,25 @@ impl DataSet for UASDataset {
     where
         Self: std::marker::Sized,
     {
-        use UASDataset::*;
-        match b {
-            1 => Some(Checksum),
-            2 => Some(Timestamp),
-            5 => Some(PlatformHeadingAngle),
-            6 => Some(PlatformPitchAngle),
-            7 => Some(PlatformRollAngle),
-            11 => Some(ImageSourceSensor),
-            12 => Some(ImageCoordinateSensor),
-            13 => Some(SensorLatitude),
-            14 => Some(SensorLongtude),
-            15 => Some(SensorTrueAltitude),
-            16 => Some(SensorHorizontalFOV),
-            17 => Some(SensorVerticalFOV),
-            18 => Some(SensorRelativeAzimuthAngle),
-            19 => Some(SensorRelativeElevationAngle),
-            20 => Some(SensorRelativeRollAngle),
-            21 => Some(SlantRange),
-            22 => Some(TargetWidth),
-            23 => Some(FrameCenterLatitude),
-            24 => Some(FrameCenterLongitude),
-            25 => Some(FrameCenterElevation),
-            40 => Some(TargetLocationLatitude),
-            41 => Some(TargetLocationLongitude),
-            42 => Some(TargetLocationElevation),
-            56 => Some(PlatformGroundSpeed),
-            57 => Some(GroundRange),
-            65 => Some(LSVersionNumber),
-            _ => None,
+        if let Ok(x) = UASDataset::try_from(b) {
+            Some(x)
+        } else {
+            None
         }
     }
 
     fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
         use UASDataset::*;
         match self {
-            Timestamp => Value::to_timestamp(v),
-            PlatformGroundSpeed | LSVersionNumber => Ok(Value::from(v[0])),
-            Checksum
-            | PlatformHeadingAngle
+            Timestamp => Value::as_timestamp(v),
+            PlatformGroundSpeed | LSVersionNumber | Checksum => Ok(Value::from(v[0])),
+            PlatformHeadingAngle
             | SensorTrueAltitude
             | SensorHorizontalFOV
             | SensorVerticalFOV
             | FrameCenterElevation
-            | TargetLocationElevation => Ok(Value::to_u16(v)),
-            PlatformPitchAngle | PlatformRollAngle => Ok(Value::to_i16(v)),
+            | TargetLocationElevation => Ok(Value::as_u16(v)),
+            PlatformPitchAngle | PlatformRollAngle => Ok(Value::as_i16(v)),
             SensorLatitude
             | SensorLongtude
             | SensorRelativeElevationAngle
@@ -188,22 +201,51 @@ impl DataSet for UASDataset {
             | FrameCenterLatitude
             | FrameCenterLongitude
             | TargetLocationLatitude
-            | TargetLocationLongitude => Ok(Value::to_i32(v)),
+            | TargetLocationLongitude => Ok(Value::as_i32(v)),
             SensorRelativeAzimuthAngle | SlantRange | TargetWidth | GroundRange => {
-                Ok(Value::to_u32(v))
+                Ok(Value::as_u32(v))
             }
-            ImageSourceSensor | ImageCoordinateSensor => Ok(Value::to_string(v)),
+            ImageSourceSensor | ImageCoordinateSensor => Ok(Value::as_string(v)),
         }
     }
+}
+
+pub fn encode(
+    mut buf: &mut [u8],
+    records: &[(UASDataset, Value)],
+) -> Result<usize, std::io::Error> {
+    let mut size = 0;
+    size += buf.write(&LS_UNIVERSAL_KEY0601_8_10)?;
+    let content_len = contents_len(records);
+    size += LengthOctet::length_to_buf(&mut buf, content_len)?;
+    size += content_len;
+    for (key, value) in records {
+        let _ = buf.write(&[*key as u8, value.len() as u8])?;
+        value.to_bytes(buf)?;
+    }
+    Ok(size)
+}
+fn contents_len(records: &[(UASDataset, Value)]) -> usize {
+    records
+        .iter()
+        .fold(0_usize, |size, (_, v)| size + 2 + v.len())
+}
+pub fn encode_len(records: &[(UASDataset, Value)]) -> usize {
+    let mut contents_len = contents_len(records);
+    contents_len += 16; // HEADER
+    contents_len + LengthOctet::encode_len(contents_len) // length
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
 
-    use crate::KLVReader;
+    use crate::{
+        uasdms::{encode_len, LS_UNIVERSAL_KEY0601_8_10},
+        KLVGlobal, KLVReader,
+    };
 
-    use super::{UASDataset, Value};
+    use super::{encode, UASDataset, Value};
     use chrono::{DateTime, Utc};
 
     #[test]
@@ -235,7 +277,7 @@ mod tests {
             42, 2, 0x0b, 0x85,
             56, 1, 0x2e,
             57, 4, 0x00, 0x8d, 0xd4, 0x29,
-            1, 2, 0x1c, 0x5f,
+            1, 2, 0x1c, 0x5f
             ];
 
         let klv = KLVReader::<UASDataset>::from_bytes(&buf);
@@ -247,6 +289,8 @@ mod tests {
                 continue;
             }
             let key = key.unwrap();
+            println!("key {:?} {:?}", key, x.content());
+            println!("value {:?}", x.parse());
             match (key, x.parse()) {
                 (UASDataset::Timestamp, Ok(Value::Timestamp(ts))) => {
                     let datetime: DateTime<Utc> = ts.into();
@@ -271,7 +315,7 @@ mod tests {
                     assert_eq!(&name, "Geodetic WGS84");
                 }
                 (k, v) => {
-                    println!("debug {:?} {:?}", k, v)
+                    println!("without assert test case {:?} {:?}", k, v)
                 }
             }
         }
@@ -290,33 +334,64 @@ mod tests {
             Value::Timestamp(SystemTime::now()),
         ];
         for x in td {
-            let mut buf = vec![];
+            let mut buf = vec![0; x.len()];
             let size = x.to_bytes(&mut buf).unwrap();
             assert_eq!(buf.len(), size);
 
             match x {
                 Value::Timestamp(x) => {
-                    assert_eq!(Value::Timestamp(x), Value::to_timestamp(&buf).unwrap());
+                    if let Value::Timestamp(y) = Value::as_timestamp(&buf).unwrap() {
+                        assert_eq!(
+                            x.duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap()
+                                .as_micros(),
+                            y.duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap()
+                                .as_micros()
+                        );
+                    }
                 }
                 Value::U8(x) => {
                     assert_eq!(Value::U8(x), Value::from(buf[0]));
                 }
                 Value::U16(x) => {
-                    assert_eq!(Value::U16(x), Value::to_u16(&buf));
+                    assert_eq!(Value::U16(x), Value::as_u16(&buf));
                 }
                 Value::U32(x) => {
-                    assert_eq!(Value::U32(x), Value::to_u32(&buf));
+                    assert_eq!(Value::U32(x), Value::as_u32(&buf));
                 }
                 Value::I16(x) => {
-                    assert_eq!(Value::I16(x), Value::to_i16(&buf));
+                    assert_eq!(Value::I16(x), Value::as_i16(&buf));
                 }
                 Value::I32(x) => {
-                    assert_eq!(Value::I32(x), Value::to_i32(&buf));
+                    assert_eq!(Value::I32(x), Value::as_i32(&buf));
                 }
                 Value::String(x) => {
-                    assert_eq!(Value::String(x), Value::to_string(&buf));
+                    assert_eq!(Value::String(x), Value::as_string(&buf));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_encode() {
+        let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
+        let mut buf = vec![0; 100];
+        let write_size = encode(&mut buf, &records).unwrap();
+        let encode_size = encode_len(&records);
+        assert_eq!(encode_size, write_size);
+
+        if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {
+            if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
+                for x in r {
+                    assert_eq!(x.key().unwrap(), UASDataset::Timestamp)
+                }
+            } else {
+                println!("unknown key {:?}", &buf[..16]);
+            }
+        } else {
+            println!("unknown data {:?}", &buf);
         }
     }
 }

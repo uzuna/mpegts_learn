@@ -1,11 +1,9 @@
 use gst::prelude::*;
-use gst_app::gst::element_error;
-use klv::{
-    uasdms::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
-    KLVGlobal, KLVReader,
-};
-use log::{info, warn};
+use log::info;
 use structopt::StructOpt;
+
+mod klvelm;
+use klvelm::{uasds_print_sink, uasds_test_src, KLV_CAPS};
 
 fn decode_mpegtsklv() {
     gst::init().unwrap();
@@ -20,10 +18,7 @@ fn decode_mpegtsklv() {
 
     let queue = gst::ElementFactory::make("queue", None).unwrap();
 
-    let appsink = gst::ElementFactory::make("appsink", None)
-        .unwrap()
-        .downcast::<gst_app::AppSink>()
-        .unwrap();
+    let uasdas_sink = uasds_print_sink().unwrap();
 
     pipeline
         .add_many(&[
@@ -34,9 +29,9 @@ fn decode_mpegtsklv() {
             &videoconvert,
             &ximagesink,
             &queue,
+            &uasdas_sink,
         ])
         .unwrap();
-    pipeline.add(&appsink).unwrap();
     src.set_property("location", "/home/fmy/Downloads/gstrec/DayFlight.mpg");
     src.link(&tsdemux).unwrap();
     let h264_sink_pad = h264parse
@@ -60,45 +55,7 @@ fn decode_mpegtsklv() {
     gst::Element::link_many(&[&h264parse, &avdec_h264, &videoconvert, &ximagesink])
         .expect("Elements could not be linked.");
 
-    queue.link(&appsink).unwrap();
-
-    // build appsink
-    appsink.set_callbacks(
-        gst_app::AppSinkCallbacks::builder()
-            // Add a handler to the "new-sample" signal.
-            .new_sample(|appsink| {
-                // Pull the sample in question out of the appsink's buffer.
-                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
-                let buffer = sample.buffer().ok_or_else(|| {
-                    element_error!(
-                        appsink,
-                        gst::ResourceError::Failed,
-                        ("Failed to get buffer from appsink")
-                    );
-
-                    gst::FlowError::Error
-                })?;
-
-                if buffer.size() > 0 {
-                    let mut slice = vec![0; buffer.size()];
-                    buffer.copy_to_slice(0, &mut slice).unwrap();
-                    // Check UniversalKey
-                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
-                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
-                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-
-                            for x in r {
-                                println!("uas ds {:?} {:?}", x.key(), x.parse());
-                            }
-                        } else {
-                            warn!("unknown key {:?}", &slice[..16]);
-                        }
-                    }
-                }
-                Ok(gst::FlowSuccess::Ok)
-            })
-            .build(),
-    );
+    queue.link(&uasdas_sink).unwrap();
 
     // Actually start the pipeline.
     pipeline
@@ -135,138 +92,7 @@ fn decode_mpegtsklv() {
         .expect("Unable to set the pipeline to the `Null` state");
 }
 
-fn include_klv() {
-    // testvideosrc with klv
-    gst::init().unwrap();
-    let pipeline = gst::Pipeline::new(None);
-    let videosrc = gst::ElementFactory::make("videotestsrc", None).unwrap();
-    let x264enc = gst::ElementFactory::make("x264enc", None).unwrap();
-    let h264parse_src = gst::ElementFactory::make("h264parse", None).unwrap();
-    let mpegtsmux = gst::ElementFactory::make("mpegtsmux", None).unwrap();
-    let tsdemux = gst::ElementFactory::make("tsdemux", None).unwrap();
-    let h264parse_dest = gst::ElementFactory::make("h264parse", None).unwrap();
-    let avdec_h264 = gst::ElementFactory::make("avdec_h264", None).unwrap();
-    let videoconvert = gst::ElementFactory::make("videoconvert", None).unwrap();
-    let ximagesink = gst::ElementFactory::make("ximagesink", None).unwrap();
-
-    let appsrc = gst::ElementFactory::make("appsrc", None)
-        .unwrap()
-        .downcast::<gst_app::AppSrc>()
-        .unwrap();
-    let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", true)
-        .build();
-
-    appsrc.set_caps(Some(&klv_caps));
-    appsrc.set_format(gst::Format::Time);
-    let mut i = 0;
-    appsrc.set_callbacks(
-        gst_app::AppSrcCallbacks::builder()
-            .need_data(move |appsrc, _| {
-                // Add a custom meta with a label to this buffer.
-                let mut buffer = gst::Buffer::with_size(6).unwrap();
-                {
-                    let buffer = buffer.get_mut().unwrap();
-                    info!("appsrc Producing buffer {}", buffer.size());
-                    buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
-                }
-                i += 1;
-
-                // appsrc already handles the error here for us.
-                let _ = appsrc.push_buffer(buffer);
-            })
-            .build(),
-    );
-
-    let videosrc_caps = gst::Caps::builder("video/x-raw")
-        .field("width", 320)
-        .field("height", 240)
-        // .field("framerate", "30/1")
-        .field("format", "I420")
-        .build();
-
-    // pipeline.add(&appsrc).unwrap();
-    pipeline
-        .add_many(&[
-            &videosrc,
-            &x264enc,
-            &h264parse_src,
-            &mpegtsmux,
-            &tsdemux,
-            &h264parse_dest,
-            &avdec_h264,
-            &videoconvert,
-            &ximagesink,
-        ])
-        .unwrap();
-
-    videosrc.link_filtered(&x264enc, &videosrc_caps).unwrap();
-    gst::Element::link_many(&[&x264enc, &h264parse_src]).unwrap();
-    gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
-    gst::Element::link_many(&[&h264parse_dest, &avdec_h264, &videoconvert, &ximagesink]).unwrap();
-
-    let h264parse_src_pad = h264parse_src.static_pad("src").unwrap();
-    let mpegtsmux_sink = mpegtsmux.request_pad_simple("sink_%d").unwrap();
-    h264parse_src_pad.link(&mpegtsmux_sink).unwrap();
-
-    // wrong hierarchy
-    // let mpegtsmux_sink_klv = mpegtsmux.request_pad_simple("sink_%d").unwrap();
-    // let appsrc_pad = appsrc.static_pad("src").unwrap();
-    // appsrc_pad.link(&mpegtsmux_sink_klv).unwrap();
-
-    // not link
-    appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
-
-    let h264_sink_pad = h264parse_dest
-        .static_pad("sink")
-        .expect("h264 could not be linked.");
-
-    // demuxはPad Capability: Sometimes
-    // つまりソースによってできたり出来なかったりするのでDynamic Connectionが必要
-    tsdemux.connect_pad_added(move |src, src_pad| {
-        info!("Received new pad {} from {}", src_pad.name(), src.name());
-        if src_pad.name().contains("video") {
-            src_pad.link(&h264_sink_pad).unwrap();
-        }
-    });
-
-    // Actually start the pipeline.
-    pipeline
-        .set_state(gst::State::Playing)
-        .expect("Unable to set the pipeline to the `Playing` state");
-    let pipeline = pipeline.dynamic_cast::<gst::Pipeline>().unwrap();
-
-    let bus = pipeline
-        .bus()
-        .expect("Pipeline without bus. Shouldn't happen!");
-
-    // And run until EOS or an error happened.
-    for msg in bus.iter_timed(gst::ClockTime::NONE) {
-        use gst::MessageView;
-
-        match msg.view() {
-            MessageView::Eos(..) => break,
-            MessageView::Error(err) => {
-                println!(
-                    "Error from {:?}: {} ({:?})",
-                    err.src().map(|s| s.path_string()),
-                    err.error(),
-                    err.debug()
-                );
-                break;
-            }
-            _ => (),
-        }
-    }
-
-    // Finally shut down everything.
-    pipeline
-        .set_state(gst::State::Null)
-        .expect("Unable to set the pipeline to the `Null` state");
-}
-
-fn only_klv() {
+fn video_with_klv() {
     gst::init().unwrap();
     let pipeline = gst::Pipeline::new(None);
     let videosrc = gst::ElementFactory::make("videotestsrc", None).unwrap();
@@ -280,10 +106,7 @@ fn only_klv() {
     let videoconvert = gst::ElementFactory::make("videoconvert", None).unwrap();
     let ximagesink = gst::ElementFactory::make("ximagesink", None).unwrap();
 
-    let appsrc = gst::ElementFactory::make("appsrc", None)
-        .unwrap()
-        .downcast::<gst_app::AppSrc>()
-        .unwrap();
+    let appsrc = uasds_test_src().unwrap();
 
     let videosrc_caps = gst::Caps::builder("video/x-raw")
         .field("width", 320)
@@ -292,89 +115,16 @@ fn only_klv() {
         .field("format", "I420")
         .build();
 
-    let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", true)
-        .build();
+    let appsink = uasds_print_sink().unwrap();
 
-    let appsink = gst::ElementFactory::make("appsink", None)
-        .unwrap()
-        .downcast::<gst_app::AppSink>()
-        .unwrap();
-
-    // build appsink
-    appsink.set_caps(Some(&klv_caps));
-    appsink.set_callbacks(
-        gst_app::AppSinkCallbacks::builder()
-            // Add a handler to the "new-sample" signal.
-            .new_sample(|appsink| {
-                // Pull the sample in question out of the appsink's buffer.
-                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
-                let buffer = sample.buffer().ok_or_else(|| {
-                    element_error!(
-                        appsink,
-                        gst::ResourceError::Failed,
-                        ("Failed to get buffer from appsink")
-                    );
-
-                    gst::FlowError::Error
-                })?;
-
-                if buffer.size() > 0 {
-                    let mut slice = vec![0; buffer.size()];
-                    buffer.copy_to_slice(0, &mut slice).unwrap();
-                    // Check UniversalKey
-                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
-                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
-                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-
-                            for x in r {
-                                println!("uas ds {:?} {:?}", x.key(), x.parse());
-                            }
-                        } else {
-                            warn!("unknown key {:?}", &slice[..16]);
-                        }
-                    } else {
-                        info!("sink: Producing buffer {}", buffer.size());
-                    }
-                }
-                Ok(gst::FlowSuccess::Ok)
-            })
-            .build(),
-    );
-
-    appsrc.set_caps(Some(&klv_caps));
-    appsrc.set_format(gst::Format::Time);
-    let mut i = 0;
-    appsrc.set_callbacks(
-        gst_app::AppSrcCallbacks::builder()
-            .need_data(move |appsrc, _| {
-                // Add a custom meta with a label to this buffer.
-                let mut buffer = gst::Buffer::with_size(6).unwrap();
-                {
-                    let buffer = buffer.get_mut().unwrap();
-                    buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
-                    info!("sending buffer: {}", buffer.size());
-                }
-                i += 1;
-
-                // appsrc already handles the error here for us.
-                let _ = appsrc.push_buffer(buffer);
-            })
-            .build(),
-    );
-
-    pipeline.add(&appsrc).unwrap();
-    // pipeline.add(&appsink).unwrap();
     pipeline
         .add_many(&[
+            &appsrc,
             &videosrc,
             &h264parse,
             &x264enc,
             &mpegtsmux,
             &tsdemux,
-            // &queue,
-            // &fakesink,
             &h264parse_dest,
             &avdec_h264,
             &videoconvert,
@@ -387,7 +137,7 @@ fn only_klv() {
 
     h264parse.link(&mpegtsmux).unwrap();
     gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
-    appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
+    appsrc.link_filtered(&mpegtsmux, &KLV_CAPS).unwrap();
     gst::Element::link_many(&[&h264parse_dest, &avdec_h264, &videoconvert, &ximagesink]).unwrap();
 
     let h264_sink_pad = h264parse_dest
@@ -477,21 +227,14 @@ fn only_fake() {
     // appsrc 固定sink
     // appsrc mux
     gst::init().unwrap();
-
     let pipeline = gst::Pipeline::new(None);
-    let klv_caps = gst::Caps::builder("meta/x-klv")
-        .field("parsed", true)
-        .build();
 
     let appsrc = gst::ElementFactory::make("appsrc", None)
         .unwrap()
         .downcast::<gst_app::AppSrc>()
         .unwrap();
 
-    let appsink = gst::ElementFactory::make("appsink", None)
-        .unwrap()
-        .downcast::<gst_app::AppSink>()
-        .unwrap();
+    let appsink = klvelm::uasds_print_sink().unwrap();
 
     let mut i = 0;
     appsrc.set_callbacks(
@@ -513,47 +256,6 @@ fn only_fake() {
 
                 // appsrc already handles the error here for us.
                 let _ = appsrc.push_buffer(buffer);
-            })
-            .build(),
-    );
-
-    // build appsink
-    appsink.set_caps(Some(&klv_caps));
-    appsink.set_callbacks(
-        gst_app::AppSinkCallbacks::builder()
-            // Add a handler to the "new-sample" signal.
-            .new_sample(|appsink| {
-                // Pull the sample in question out of the appsink's buffer.
-                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
-                let buffer = sample.buffer().ok_or_else(|| {
-                    element_error!(
-                        appsink,
-                        gst::ResourceError::Failed,
-                        ("Failed to get buffer from appsink")
-                    );
-
-                    gst::FlowError::Error
-                })?;
-
-                if buffer.size() > 0 {
-                    let mut slice = vec![0; buffer.size()];
-                    buffer.copy_to_slice(0, &mut slice).unwrap();
-                    // Check UniversalKey
-                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
-                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
-                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-
-                            for x in r {
-                                println!("uas ds {:?} {:?}", x.key(), x.parse());
-                            }
-                        } else {
-                            warn!("unknown key {:?}", &slice[..16]);
-                        }
-                    } else {
-                        info!("sink: Producing buffer {}", buffer.size());
-                    }
-                }
-                Ok(gst::FlowSuccess::Ok)
             })
             .build(),
     );
@@ -601,7 +303,6 @@ fn only_fake() {
 #[structopt(about = "the stupid content tracker")]
 enum Cmd {
     Decode,
-    App,
     Klv,
     Fake,
 }
@@ -611,8 +312,7 @@ fn main() {
     let cmd = Cmd::from_args();
     log::debug!("cmd {:?}", &cmd);
     match cmd {
-        Cmd::App => include_klv(),
-        Cmd::Klv => only_klv(),
+        Cmd::Klv => video_with_klv(),
         Cmd::Fake => only_fake(),
         Cmd::Decode => decode_mpegtsklv(),
     }
