@@ -71,6 +71,9 @@ pub fn uasds_test_src() -> Result<gst::Element, BoolError> {
     appsrc.set_caps(Some(&KLV_CAPS));
 
     appsrc.set_format(gst::Format::Time);
+    // TODO 決まったタイミングでデータを送る方法
+    // instantからPTS自体は作れそう
+    // データ生成周期の作り方を確認する。今は500msのPTSを入れるとイベント発火が制限されて結果的に2Hz周期になっている
     let mut i = 0;
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
