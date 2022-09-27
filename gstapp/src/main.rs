@@ -275,7 +275,12 @@ fn only_klv() {
     let mpegtsmux = gst::ElementFactory::make("mpegtsmux", None).unwrap();
     let tsdemux = gst::ElementFactory::make("tsdemux", None).unwrap();
     let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
-    let fakesink2 = gst::ElementFactory::make("fakesink", None).unwrap();
+
+    let h264parse_dest = gst::ElementFactory::make("h264parse", None).unwrap();
+    let avdec_h264 = gst::ElementFactory::make("avdec_h264", None).unwrap();
+    let videoconvert = gst::ElementFactory::make("videoconvert", None).unwrap();
+    let ximagesink = gst::ElementFactory::make("ximagesink", None).unwrap();
+    let queue = gst::ElementFactory::make("queue", None).unwrap();
 
     let appsrc = gst::ElementFactory::make("appsrc", None)
         .unwrap()
@@ -317,33 +322,42 @@ fn only_klv() {
     pipeline.add(&appsrc).unwrap();
     pipeline
         .add_many(&[
-            &videosrc, &h264parse, &x264enc, &mpegtsmux, &tsdemux, &fakesink, &fakesink2,
+            &videosrc,
+            &h264parse,
+            &x264enc,
+            &mpegtsmux,
+            &tsdemux,
+            // &queue,
+            // &fakesink,
+            &h264parse_dest,
+            &avdec_h264,
+            &videoconvert,
+            &ximagesink,
         ])
         .unwrap();
 
     videosrc.link_filtered(&x264enc, &videosrc_caps).unwrap();
     x264enc.link(&h264parse).unwrap();
+    // queue.link(&fakesink).unwrap();
 
-    // WasLinkedが出てしまう
     h264parse.link(&mpegtsmux).unwrap();
-
     gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
     appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
+    gst::Element::link_many(&[&h264parse_dest, &avdec_h264, &videoconvert, &ximagesink]).unwrap();
 
-    let fakesink_pad = fakesink
+    let h264_sink_pad = h264parse_dest
         .static_pad("sink")
-        .expect("failed to get fakesink pad.");
-
-    let fakesink2_pad = fakesink2
-        .static_pad("sink")
-        .expect("failed to get fakesink pad.");
+        .expect("h264 could not be linked.");
 
     tsdemux.connect_pad_added(move |src, src_pad| {
         info!("Received new pad {} from {}", src_pad.name(), src.name());
         if src_pad.name().contains("video") {
-            src_pad.link(&fakesink_pad).unwrap();
+            src_pad.link(&h264_sink_pad).unwrap();
         } else {
-            src_pad.link(&fakesink2_pad).unwrap();
+            let fakesink_pad = queue
+                .static_pad("sink")
+                .expect("failed to get fakesink pad.");
+            src_pad.link(&fakesink_pad).unwrap();
         }
     });
 
