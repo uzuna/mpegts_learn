@@ -274,8 +274,6 @@ fn only_klv() {
     let h264parse = gst::ElementFactory::make("h264parse", None).unwrap();
     let mpegtsmux = gst::ElementFactory::make("mpegtsmux", None).unwrap();
     let tsdemux = gst::ElementFactory::make("tsdemux", None).unwrap();
-    let queue = gst::ElementFactory::make("queue", None).unwrap();
-    let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
 
     let h264parse_dest = gst::ElementFactory::make("h264parse", None).unwrap();
     let avdec_h264 = gst::ElementFactory::make("avdec_h264", None).unwrap();
@@ -367,7 +365,7 @@ fn only_klv() {
     );
 
     pipeline.add(&appsrc).unwrap();
-    pipeline.add(&appsink).unwrap();
+    // pipeline.add(&appsink).unwrap();
     pipeline
         .add_many(&[
             &videosrc,
@@ -375,7 +373,7 @@ fn only_klv() {
             &x264enc,
             &mpegtsmux,
             &tsdemux,
-            &queue,
+            // &queue,
             // &fakesink,
             &h264parse_dest,
             &avdec_h264,
@@ -391,37 +389,39 @@ fn only_klv() {
     gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
     appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
     gst::Element::link_many(&[&h264parse_dest, &avdec_h264, &videoconvert, &ximagesink]).unwrap();
-    queue.link(&appsink).unwrap();
 
     let h264_sink_pad = h264parse_dest
         .static_pad("sink")
         .expect("h264 could not be linked.");
 
-    // let pipeline_weak = pipeline.downgrade();
+    let pipeline_weak = pipeline.downgrade();
+    let appsink = appsink.upcast::<gst::Element>();
 
     tsdemux.connect_pad_added(move |src, src_pad| {
         info!("Received new pad {} from {}", src_pad.name(), src.name());
         if src_pad.name().contains("video") {
             src_pad.link(&h264_sink_pad).unwrap();
         } else {
+            let pipeline = match pipeline_weak.upgrade() {
+                Some(pipeline) => pipeline,
+                None => return,
+            };
+            info!("dynamic add elements");
+            // pipeline.set_state(gst::State::Paused).unwrap();
+            let queue = gst::ElementFactory::make("queue", None).unwrap();
+            let elements = &[&queue, &appsink];
+            pipeline
+                .add_many(elements)
+                .expect("failed to add audio elements to pipeline");
+            gst::Element::link_many(elements).unwrap();
+
             let fakesink_pad = queue
                 .static_pad("sink")
                 .expect("failed to get fakesink pad.");
             src_pad.link(&fakesink_pad).unwrap();
-
-            // let pipeline = match pipeline_weak.upgrade() {
-            //     Some(pipeline) => pipeline,
-            //     None => return,
-            // };
-            // let queue = gst::ElementFactory::make("queue", None).unwrap();
-            // let fakesink = gst::ElementFactory::make("fakesink", None).unwrap();
-            // pipeline.add(&queue).unwrap();
-            // pipeline.add(&fakesink).unwrap();
-            // queue.link(&fakesink).unwrap();
-            // let fakesink_pad = queue
-            //     .static_pad("sink")
-            //     .expect("failed to get fakesink pad.");
-            // src_pad.link(&fakesink_pad).unwrap();
+            for e in elements {
+                e.sync_state_with_parent().unwrap();
+            }
         }
     });
 
@@ -450,6 +450,17 @@ fn only_klv() {
                 );
                 break;
             }
+
+            MessageView::StateChanged(s) => {
+                info!(
+                    "State changed from {:?}: {:?} -> {:?} ({:?})",
+                    s.src().map(|s| s.path_string()),
+                    s.old(),
+                    s.current(),
+                    s.pending()
+                );
+            }
+
             _ => (),
         }
     }
