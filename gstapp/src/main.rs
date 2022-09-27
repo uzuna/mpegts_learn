@@ -288,7 +288,7 @@ fn only_klv() {
                     let buffer = buffer.get_mut().unwrap();
                     println!("Producing buffer {}", buffer.size());
                     buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                    // buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
                 }
                 i += 1;
 
@@ -303,17 +303,149 @@ fn only_klv() {
         .add_many(&[&mpegtsmux, &tsdemux, &fakesink])
         .unwrap();
 
-    gst::Element::link_many(&[&mpegtsmux, &tsdemux, &fakesink]).unwrap();
+    gst::Element::link_many(&[&mpegtsmux, &tsdemux]).unwrap();
     let mpegtsmux_sink_klv = mpegtsmux.request_pad_simple("sink_%d").unwrap();
     let appsrc_pad = appsrc.static_pad("src").unwrap();
     appsrc_pad.link(&mpegtsmux_sink_klv).unwrap();
     // appsrc.link_filtered(&mpegtsmux, &klv_caps).unwrap();
+
+    let fakesink_pad = fakesink
+        .static_pad("sink")
+        .expect("failed to get fakesink pad.");
+
     tsdemux.connect_pad_added(move |src, src_pad| {
         info!("Received new pad {} from {}", src_pad.name(), src.name());
+        src_pad.link(&fakesink_pad).unwrap();
         // if src_pad.name().contains("video") {
         //     src_pad.link(&h264_sink_pad).unwrap();
         // }
     });
+
+    // Actually start the pipeline.
+    pipeline
+        .set_state(gst::State::Playing)
+        .expect("Unable to set the pipeline to the `Playing` state");
+    let pipeline = pipeline.dynamic_cast::<gst::Pipeline>().unwrap();
+
+    let bus = pipeline
+        .bus()
+        .expect("Pipeline without bus. Shouldn't happen!");
+
+    // And run until EOS or an error happened.
+    for msg in bus.iter_timed(gst::ClockTime::NONE) {
+        use gst::MessageView;
+
+        match msg.view() {
+            MessageView::Eos(..) => break,
+            MessageView::Error(err) => {
+                println!(
+                    "Error from {:?}: {} ({:?})",
+                    err.src().map(|s| s.path_string()),
+                    err.error(),
+                    err.debug()
+                );
+                break;
+            }
+            _ => (),
+        }
+    }
+
+    // Finally shut down everything.
+    pipeline
+        .set_state(gst::State::Null)
+        .expect("Unable to set the pipeline to the `Null` state");
+}
+
+
+fn only_fake(){
+    // TODO Appsrcがcaps通じてnego出来るのを確認する
+    // app src sinkの対から
+    // appsrc 固定sink
+    // appsrc mux
+    gst::init().unwrap();
+
+    let pipeline = gst::Pipeline::new(None);
+    let klv_caps = gst::Caps::builder("meta/x-klv")
+        .field("parsed", "true")
+        .build();
+
+    let appsrc = gst::ElementFactory::make("appsrc", None)
+        .unwrap()
+        .downcast::<gst_app::AppSrc>()
+        .unwrap();
+
+    let appsink = gst::ElementFactory::make("appsink", None)
+        .unwrap()
+        .downcast::<gst_app::AppSink>()
+        .unwrap();
+    
+    let mut i = 0;
+    appsrc.set_callbacks(
+        gst_app::AppSrcCallbacks::builder()
+            .need_data(move |appsrc, _| {
+                if i > 5 {
+                    let _ = appsrc.end_of_stream();
+                    return
+                }
+                // Add a custom meta with a label to this buffer.
+                let mut buffer = gst::Buffer::with_size(6).unwrap();
+                {
+                    let buffer = buffer.get_mut().unwrap();
+                    println!("Producing buffer {}", buffer.size());
+                    buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
+                    // buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                }
+                i += 1;
+
+                // appsrc already handles the error here for us.
+                let _ = appsrc.push_buffer(buffer);
+            })
+            .build(),
+    );
+
+    // build appsink
+    appsink.set_caps(Some(&klv_caps));
+    appsink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            // Add a handler to the "new-sample" signal.
+            .new_sample(|appsink| {
+                // Pull the sample in question out of the appsink's buffer.
+                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                let buffer = sample.buffer().ok_or_else(|| {
+                    element_error!(
+                        appsink,
+                        gst::ResourceError::Failed,
+                        ("Failed to get buffer from appsink")
+                    );
+
+                    gst::FlowError::Error
+                })?;
+
+                if buffer.size() > 0 {
+                    let mut slice = vec![0; buffer.size()];
+                    buffer.copy_to_slice(0, &mut slice).unwrap();
+                    // Check UniversalKey
+                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
+                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
+
+                            for x in r {
+                                println!("uas ds {:?} {:?}", x.key(), x.parse());
+                            }
+                        } else {
+                            warn!("unknown key {:?}", &slice[..16]);
+                        }
+                    }
+                }
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+
+    pipeline.add(&appsrc).unwrap();
+    pipeline.add(&appsink).unwrap();
+    appsrc.link(&appsink).unwrap();
+
 
     // Actually start the pipeline.
     pipeline
@@ -356,6 +488,7 @@ enum Cmd {
     Decode,
     App,
     Klv,
+    Fake,
 }
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -365,6 +498,7 @@ fn main() {
     match cmd {
         Cmd::App => include_klv(),
         Cmd::Klv => only_klv(),
+        Cmd::Fake => only_fake(),
         Cmd::Decode => decode_mpegtsklv(),
     }
 }
