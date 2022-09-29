@@ -392,7 +392,7 @@ mod tests {
             (UASDataset::TargetLocationLatitude, Value::I32(1234)),
         ];
         let encode_size = encode_len(&records);
-        let mut buf = vec!(0_u8; encode_size);
+        let mut buf = vec![0_u8; encode_size];
         let write_size = encode(&mut buf, &records).unwrap();
         assert_eq!(encode_size, write_size);
 

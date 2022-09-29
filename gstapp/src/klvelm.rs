@@ -19,7 +19,8 @@ pub static KLV_CAPS: Lazy<Caps> = Lazy::new(|| {
         .build()
 });
 
-pub fn uasds_print_sink() -> Result<gst::Element, BoolError> {
+/// UADDLSを見つけたらパースするSink
+pub fn uasdls_print_sink() -> Result<gst::Element, BoolError> {
     let appsink = gst::ElementFactory::make("appsink", None)?
         .downcast::<gst_app::AppSink>()
         .unwrap();
@@ -62,7 +63,8 @@ pub fn uasds_print_sink() -> Result<gst::Element, BoolError> {
     Ok(appsink.upcast::<gst::Element>())
 }
 
-pub fn uasds_test_src() -> Result<gst::Element, BoolError> {
+/// UADDLSに基づいてタイムスタンプだけを埋め込んだメタデータを生成するSrc
+pub fn uasdls_test_src() -> Result<gst::Element, BoolError> {
     let appsrc = gst::ElementFactory::make("appsrc", None)?
         .downcast::<gst_app::AppSrc>()
         .unwrap();
