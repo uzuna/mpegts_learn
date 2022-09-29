@@ -85,7 +85,7 @@ pub fn uasds_test_src() -> Result<gst::Element, BoolError> {
 
                 let mut buffer = gst::Buffer::with_size(expect_buffer_size).unwrap();
                 {
-                    let mut write_buf = vec![0; expect_buffer_size];
+                    let mut write_buf = Vec::with_capacity(expect_buffer_size);
                     let buffer = buffer.get_mut().unwrap();
                     encode(&mut write_buf, &records).unwrap();
                     buffer.copy_from_slice(0, &write_buf).unwrap();

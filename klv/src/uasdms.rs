@@ -52,36 +52,41 @@ impl Value {
         Value::U32(BigEndian::read_u32(x))
     }
 
-    fn to_bytes(&self, mut buf: &mut [u8]) -> std::io::Result<usize> {
+    fn to_bytes<W: Write>(&self, mut buf: W) -> std::io::Result<usize> {
         use Value::*;
         match self {
             Timestamp(x) => {
+                let mut slice = [0; 8];
                 let micros = x
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap()
                     .as_micros();
-                BigEndian::write_u64(buf, micros as u64);
+                BigEndian::write_u64(&mut slice, micros as u64);
+                buf.write(&slice[..])
             }
-            U8(x) => {
-                buf.write_all(&[*x])?;
-            }
+            U8(x) => buf.write(&[*x]),
             U16(x) => {
-                BigEndian::write_u16(buf, *x);
+                let mut slice = [0; 2];
+                BigEndian::write_u16(&mut slice, *x);
+                buf.write(&slice[..])
             }
             U32(x) => {
-                BigEndian::write_u32(buf, *x);
+                let mut slice = [0; 4];
+                BigEndian::write_u32(&mut slice, *x);
+                buf.write(&slice[..])
             }
             I16(x) => {
-                BigEndian::write_i16(buf, *x);
+                let mut slice = [0; 2];
+                BigEndian::write_i16(&mut slice, *x);
+                buf.write(&slice[..])
             }
             I32(x) => {
-                BigEndian::write_i32(buf, *x);
+                let mut slice = [0; 4];
+                BigEndian::write_i32(&mut slice, *x);
+                buf.write(&slice[..])
             }
-            String(s) => {
-                buf.write_all(s.as_bytes())?;
-            }
+            String(s) => buf.write(s.as_bytes()),
         }
-        Ok(self.len())
     }
 
     #[allow(clippy::len_without_is_empty)]
@@ -154,7 +159,7 @@ impl TryFrom<u8> for UASDataset {
             x if x == PlatformHeadingAngle as u8 => Ok(PlatformHeadingAngle),
             x if x == PlatformPitchAngle as u8 => Ok(PlatformPitchAngle),
             x if x == PlatformRollAngle as u8 => Ok(PlatformRollAngle),
-            x if x == PlatformPitchAngle as u8 && x <= FrameCenterElevation as u8 => {
+            x if x >= ImageSourceSensor as u8 && x <= FrameCenterElevation as u8 => {
                 Ok(unsafe { std::mem::transmute(x) })
             }
             x if x >= TargetLocationLatitude as u8 && x <= TargetLocationElevation as u8 => {
@@ -221,7 +226,7 @@ pub fn encode(
     size += content_len;
     for (key, value) in records {
         let _ = buf.write(&[*key as u8, value.len() as u8])?;
-        value.to_bytes(buf)?;
+        value.to_bytes(&mut buf)?;
     }
     Ok(size)
 }
@@ -334,9 +339,9 @@ mod tests {
             Value::Timestamp(SystemTime::now()),
         ];
         for x in td {
-            let mut buf = vec![0; x.len()];
+            let mut buf = vec![];
             let size = x.to_bytes(&mut buf).unwrap();
-            assert_eq!(buf.len(), size);
+            assert_eq!(buf.len(), size, "value {:?} {:?} ", x, buf);
 
             match x {
                 Value::Timestamp(x) => {
@@ -375,7 +380,14 @@ mod tests {
 
     #[test]
     fn test_encode() {
-        let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
+        let records = [
+            (UASDataset::Timestamp, Value::Timestamp(SystemTime::now())),
+            (
+                UASDataset::ImageSourceSensor,
+                Value::String("TESTS".to_string()),
+            ),
+            (UASDataset::TargetLocationLatitude, Value::I32(1234)),
+        ];
         let mut buf = vec![0; 100];
         let write_size = encode(&mut buf, &records).unwrap();
         let encode_size = encode_len(&records);
@@ -385,7 +397,12 @@ mod tests {
             if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
                 let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
                 for x in r {
-                    assert_eq!(x.key().unwrap(), UASDataset::Timestamp)
+                    let key = x.key().unwrap();
+                    assert!(
+                        key == UASDataset::Timestamp
+                            || key == UASDataset::ImageSourceSensor
+                            || key == UASDataset::TargetLocationLatitude
+                    );
                 }
             } else {
                 println!("unknown key {:?}", &buf[..16]);

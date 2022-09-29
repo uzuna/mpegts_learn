@@ -1,11 +1,13 @@
+use std::path::Path;
+
 use gst::prelude::*;
-use log::info;
+use log::{error, info};
 use structopt::StructOpt;
 
 mod klvelm;
 use klvelm::{uasds_print_sink, uasds_test_src, KLV_CAPS};
 
-fn decode_mpegtsklv() {
+fn decode_mpegtsklv(path: String) {
     gst::init().unwrap();
 
     let pipeline = gst::Pipeline::new(None);
@@ -32,7 +34,13 @@ fn decode_mpegtsklv() {
             &uasdas_sink,
         ])
         .unwrap();
-    src.set_property("location", "/home/fmy/Downloads/gstrec/DayFlight.mpg");
+    let filepath = Path::new(&path);
+    if !filepath.exists() {
+        error!("not found file {}", filepath.to_str().unwrap());
+        return;
+    }
+    info!("using videofile {}", &path);
+    src.set_property("location", &path);
     src.link(&tsdemux).unwrap();
     let h264_sink_pad = h264parse
         .static_pad("sink")
@@ -302,7 +310,10 @@ fn only_fake() {
 #[derive(Debug, StructOpt)]
 #[structopt(about = "the stupid content tracker")]
 enum Cmd {
-    Decode,
+    Decode {
+        #[structopt(short, long, default_value = "../testdata/DayFlight.mpg")]
+        path: String,
+    },
     Klv,
     Fake,
 }
@@ -314,6 +325,6 @@ fn main() {
     match cmd {
         Cmd::Klv => video_with_klv(),
         Cmd::Fake => only_fake(),
-        Cmd::Decode => decode_mpegtsklv(),
+        Cmd::Decode { path } => decode_mpegtsklv(path),
     }
 }
