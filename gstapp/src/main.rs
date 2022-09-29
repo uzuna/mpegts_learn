@@ -119,7 +119,6 @@ fn video_with_klv() {
     let videosrc_caps = gst::Caps::builder("video/x-raw")
         .field("width", 320)
         .field("height", 240)
-        // .field("framerate", "30/1")
         .field("format", "I420")
         .build();
 
@@ -229,84 +228,6 @@ fn video_with_klv() {
         .expect("Unable to set the pipeline to the `Null` state");
 }
 
-fn only_fake() {
-    // TODO Appsrcがcaps通じてnego出来るのを確認する
-    // app src sinkの対から
-    // appsrc 固定sink
-    // appsrc mux
-    gst::init().unwrap();
-    let pipeline = gst::Pipeline::new(None);
-
-    let appsrc = gst::ElementFactory::make("appsrc", None)
-        .unwrap()
-        .downcast::<gst_app::AppSrc>()
-        .unwrap();
-
-    let appsink = klvelm::uasds_print_sink().unwrap();
-
-    let mut i = 0;
-    appsrc.set_callbacks(
-        gst_app::AppSrcCallbacks::builder()
-            .need_data(move |appsrc, _| {
-                if i > 5 {
-                    let _ = appsrc.end_of_stream();
-                    return;
-                }
-                // Add a custom meta with a label to this buffer.
-                let mut buffer = gst::Buffer::with_size(6).unwrap();
-                {
-                    let buffer = buffer.get_mut().unwrap();
-                    info!("Producing buffer {}", buffer.size());
-                    buffer.copy_from_slice(0, &[0, 1, 2, 3, 4, 5]).unwrap();
-                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
-                }
-                i += 1;
-
-                // appsrc already handles the error here for us.
-                let _ = appsrc.push_buffer(buffer);
-            })
-            .build(),
-    );
-
-    pipeline.add(&appsrc).unwrap();
-    pipeline.add(&appsink).unwrap();
-    appsrc.link(&appsink).unwrap();
-
-    // Actually start the pipeline.
-    pipeline
-        .set_state(gst::State::Playing)
-        .expect("Unable to set the pipeline to the `Playing` state");
-    let pipeline = pipeline.dynamic_cast::<gst::Pipeline>().unwrap();
-
-    let bus = pipeline
-        .bus()
-        .expect("Pipeline without bus. Shouldn't happen!");
-
-    // And run until EOS or an error happened.
-    for msg in bus.iter_timed(gst::ClockTime::NONE) {
-        use gst::MessageView;
-
-        match msg.view() {
-            MessageView::Eos(..) => break,
-            MessageView::Error(err) => {
-                println!(
-                    "Error from {:?}: {} ({:?})",
-                    err.src().map(|s| s.path_string()),
-                    err.error(),
-                    err.debug()
-                );
-                break;
-            }
-            _ => (),
-        }
-    }
-
-    // Finally shut down everything.
-    pipeline
-        .set_state(gst::State::Null)
-        .expect("Unable to set the pipeline to the `Null` state");
-}
-
 #[derive(Debug, StructOpt)]
 #[structopt(about = "the stupid content tracker")]
 enum Cmd {
@@ -315,7 +236,6 @@ enum Cmd {
         path: String,
     },
     Klv,
-    Fake,
 }
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -324,7 +244,6 @@ fn main() {
     log::debug!("cmd {:?}", &cmd);
     match cmd {
         Cmd::Klv => video_with_klv(),
-        Cmd::Fake => only_fake(),
         Cmd::Decode { path } => decode_mpegtsklv(path),
     }
 }

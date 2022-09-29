@@ -2,6 +2,7 @@
 name = "gstapp"
 version = "0.1.0"
 edition = "2021"
+description = "example display and embeds the klv metadata in video"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
