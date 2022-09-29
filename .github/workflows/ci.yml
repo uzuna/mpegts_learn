@@ -4,8 +4,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - &aptcache
-        uses: awalsh128/cache-apt-pkgs-action@latest
+      - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           version: 1.0
@@ -19,7 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - *aptcache
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          version: 1.0
       - name: ls
         run: ls -la .
       - name: test
@@ -30,7 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - *aptcache
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          version: 1.0
       - name: test
         run: cargo clippy --all-targets --all-features -- -D warnings
   test:
@@ -39,6 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - *aptcache
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          version: 1.0
       - name: test
         run: cargo test --all -- --nocapture
