@@ -5,6 +5,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: rustup toolchain install stable --profile minimal
+      - name: Install xmllint
+        run: sudo apt install libgstreamer1.0-dev
       - uses: Swatinem/rust-cache@v2
       - name: build
         run: cargo build
