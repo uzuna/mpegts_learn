@@ -3,22 +3,25 @@ extern crate mpeg2ts_reader;
 extern crate hex_slice;
 
 use hex_slice::AsHex;
+use log::{debug, info};
 
-use klv::uasdms::LS_UNIVERSAL_KEY0601_8_10;
+use klv::uasdls::LS_UNIVERSAL_KEY0601_8_10;
 use mpeg2ts_reader::demultiplex;
 use mpeg2ts_reader::packet;
 use mpeg2ts_reader::packet::Pid;
 use mpeg2ts_reader::pes;
 use mpeg2ts_reader::pes::PesHeader;
 
+use mpeg2ts_reader::pes::Timestamp;
 use mpeg2ts_reader::psi;
 use mpeg2ts_reader::StreamType;
 use std::cmp;
 
 use std::fs::File;
 use std::io::Read;
+use std::time::Duration;
 
-use klv::uasdms::UASDataset;
+use klv::uasdls::UASDataset;
 use klv::{KLVGlobal, KLVReader};
 use structopt::StructOpt;
 
@@ -51,60 +54,29 @@ demux_context!(DumpDemuxContext, DumpFilterSwitch);
 impl DumpDemuxContext {
     fn do_construct(&mut self, req: demultiplex::FilterRequest<'_, '_>) -> DumpFilterSwitch {
         match req {
-            // The 'Program Association Table' is is always on PID 0.  We just use the standard
-            // handling here, but an application could insert its own logic if required,
             demultiplex::FilterRequest::ByPid(psi::pat::PAT_PID) => {
                 DumpFilterSwitch::Pat(demultiplex::PatPacketFilter::default())
             }
-            // 'Stuffing' data on PID 0x1fff may be used to pad-out parts of the transport stream
-            // so that it has constant overall bitrate.  This causes it to be ignored if present.
             demultiplex::FilterRequest::ByPid(mpeg2ts_reader::STUFFING_PID) => {
                 DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
             }
-            // Some Transport Streams will contain data on 'well known' PIDs, which are not
-            // announced in PAT / PMT metadata.  This application does not process any of these
-            // well known PIDs, so we register NullPacketFiltet such that they will be ignored
             demultiplex::FilterRequest::ByPid(_) => {
                 DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
             }
-            // This match-arm installs our application-specific handling for each H264 stream
-            // discovered within the transport stream,
             demultiplex::FilterRequest::ByStream {
-                stream_type: _,
+                stream_type: StreamType::H2220PesPrivateData,
                 pmt,
                 stream_info,
                 ..
             } => PtsDumpElementaryStreamConsumer::construct(pmt, stream_info),
-            // We need to have a match-arm to specify how to handle any other StreamType values
-            // that might be present; we answer with NullPacketFilter so that anything other than
-            // // H264 (handled above) is ignored,
-            // demultiplex::FilterRequest::ByStream {
-            //     stream_type: StreamType::Adts,
-            //     pmt,
-            //     stream_info,
-            //     ..
-            // } => {
-            //     println!("adts {:?} {:?}", pmt, stream_info);
-            //     DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
-            // }
-            // demultiplex::FilterRequest::ByStream { stream_type, stream_info, .. } => {
-            //     println!("stream_type {:?} {:?}", stream_type, stream_info);
-            //     DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
-            // }
-            // The 'Program Map Table' defines the sub-streams for a particular program within the
-            // Transport Stream (it is common for Transport Streams to contain only one program).
-            // We just use the standard handling here, but an application could insert its own
-            // logic if required,
+            demultiplex::FilterRequest::ByStream { .. } => {
+                DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
+            }
             demultiplex::FilterRequest::Pmt {
                 pid,
                 program_number,
-            } => {
-                println!("Pmt {:?} {}", pid, program_number);
-                DumpFilterSwitch::Pmt(demultiplex::PmtPacketFilter::new(pid, program_number))
-            }
-            // Ignore 'Network Information Table', if present,
-            demultiplex::FilterRequest::Nit { pid } => {
-                println!("pid {:?}", pid);
+            } => DumpFilterSwitch::Pmt(demultiplex::PmtPacketFilter::new(pid, program_number)),
+            demultiplex::FilterRequest::Nit { .. } => {
                 DumpFilterSwitch::Null(demultiplex::NullPacketFilter::default())
             }
         }
@@ -139,28 +111,24 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
     fn begin_packet(&mut self, _ctx: &mut DumpDemuxContext, header: pes::PesHeader) {
         match header.contents() {
             pes::PesContents::Parsed(Some(parsed)) => {
-                // match parsed.pts_dts() {
-                //     Ok(pes::PtsDts::PtsOnly(Ok(pts))) => {
-                //         println!("{:?}: pts {:#08x}                ", self.pid, pts.value())
-                //     }
-                //     Ok(pes::PtsDts::Both {
-                //         pts: Ok(pts),
-                //         dts: Ok(dts),
-                //     }) => println!(
-                //         "{:?}: pts {:?} sec dts {:?} ",
-                //         self.pid,
-                //         Duration::from_secs_f64(pts.value() as f64 / Timestamp::TIMEBASE as f64),
-                //         Duration::from_secs_f64(dts.value() as f64 / Timestamp::TIMEBASE as f64),
-                //     ),
-                //     _ => (),
-                // }
+                match parsed.pts_dts() {
+                    Ok(pes::PtsDts::PtsOnly(Ok(pts))) => {
+                        println!("{:?}: pts {:#08x}                ", self.pid, pts.value())
+                    }
+                    Ok(pes::PtsDts::Both {
+                        pts: Ok(pts),
+                        dts: Ok(dts),
+                    }) => println!(
+                        "{:?}: pts {:?} sec dts {:?} ",
+                        self.pid,
+                        Duration::from_secs_f64(pts.value() as f64 / Timestamp::TIMEBASE as f64),
+                        Duration::from_secs_f64(dts.value() as f64 / Timestamp::TIMEBASE as f64),
+                    ),
+                    _ => (),
+                }
                 let payload = parsed.payload();
                 self.len = Some(payload.len());
                 self.buf.extend_from_slice(payload);
-                // println!(
-                //     "{:02x}",
-                //     payload[..cmp::min(payload.len(), 16)].plain_hex(false)
-                // )
             }
             pes::PesContents::Parsed(None) => println!("parsed"),
             pes::PesContents::Payload(payload) => {
@@ -174,29 +142,20 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
         }
     }
     fn continue_packet(&mut self, _ctx: &mut DumpDemuxContext, data: &[u8]) {
-        // println!(
-        //     "{:?}:                     continues {:02x}",
-        //     self.pid,
-        //     data[..cmp::min(data.len(), 16)].plain_hex(false)
-        // );
+        self.buf.extend_from_slice(data);
         self.len = self.len.map(|l| l + data.len());
     }
     fn end_packet(&mut self, _ctx: &mut DumpDemuxContext) {
-        if self.format == StreamType::H264 {
-            return;
-        }
-        println!(
-            "{:?}: {:?} end of packet length={:?}",
-            self.pid, self.format, self.len
-        );
-        if self.format == StreamType::H2220PesPrivateData && self.len.unwrap_or(0) > 18 {
-            // key 0x81で始まる。長さは0x91以外のサンプルがない
-            // println!("byte {:02x?}", &self.buf[16..24]);
-            let len = self.buf[17] as usize;
-            let r = KLVReader::<UASDataset>::from_bytes(&self.buf[18..18 + len]);
-            for x in r {
-                println!("uas ds {:?} {} {:?}", x.key(), x.len(), x.parse());
+        if let Ok(klvg) = KLVGlobal::try_from_bytes(&self.buf) {
+            if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                info!("Found UASDLS");
+                let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
+                for x in r {
+                    info!("  {:?} {:?}", x.key(), x.parse());
+                }
             }
+            self.buf.clear();
+            self.len = None;
         }
     }
     fn continuity_error(&mut self, _ctx: &mut DumpDemuxContext) {}
@@ -214,7 +173,7 @@ struct Opt {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let opt = Opt::from_args();
-    println!("opt {:?}", &opt);
+    debug!("opt {:?}", &opt);
 
     // open input file named on command line,
     let mut f =

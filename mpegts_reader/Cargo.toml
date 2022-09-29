@@ -2,6 +2,8 @@
 name = "mpegts_reader"
 version = "0.1.0"
 edition = "2021"
+description = "print klv metadata from mpeg2ts file"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,4 +13,4 @@ log = "0.4.17"
 mpeg2ts-reader = "0.15.0"
 structopt = "0.3.26"
 hex-slice = "0.1.4"
-klv = {package="klv", path = "../klv", features=["uasdms"]}
+klv = {package="klv", path = "../klv", features=["uasdls"]}

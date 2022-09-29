@@ -2,6 +2,7 @@
 name = "gstapp"
 version = "0.1.0"
 edition = "2021"
+description = "example display and embeds the klv metadata in video"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,5 +14,5 @@ gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/g
 gst-base = { package = "gstreamer-base", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs" }
 gst-app = { package = "gstreamer-app", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs" }
 once_cell = "1.0"
-klv = {package="klv", path = "../klv", features=["uasdms"]}
+klv = {package="klv", path = "../klv", features=["uasdls"]}
 structopt = "0.3.26"
