@@ -1,0 +1,28 @@
+on: push
+jobs:
+  build_cache:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build
+  fmt:
+    runs-on: ubuntu-latest
+    needs: build_cache
+    steps:
+      - name: test
+        run: cargo fmt --all -- --check
+  clippy:
+    runs-on: ubuntu-latest
+    needs: build_cache
+    steps:
+      - name: test
+        run: cargo clippy --all-targets --all-features -- -D warnings
+  test:
+    runs-on: ubuntu-latest
+    needs: build_cache
+    steps:
+      - name: test
+        run: cargo test --all -- --nocapture
