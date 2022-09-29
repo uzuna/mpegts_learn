@@ -195,10 +195,10 @@ fn video_with_klv<P: AsRef<str>>(savefilename: Option<P>) {
                 .expect("failed to add audio elements to pipeline");
             gst::Element::link_many(elements).unwrap();
 
-            let fakesink_pad = queue
+            let appsink_pad = queue
                 .static_pad("sink")
-                .expect("failed to get fakesink pad.");
-            src_pad.link(&fakesink_pad).unwrap();
+                .expect("failed to get queue and appsink pad.");
+            src_pad.link(&appsink_pad).unwrap();
             for e in elements {
                 e.sync_state_with_parent().unwrap();
             }
