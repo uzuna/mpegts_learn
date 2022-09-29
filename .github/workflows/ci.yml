@@ -4,9 +4,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - &aptcache
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          version: 1.0
       - run: rustup toolchain install stable --profile minimal
-      - name: Install gstreamer
-        run: sudo apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - uses: Swatinem/rust-cache@v2
       - name: build
         run: cargo build
@@ -16,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+      - *aptcache
       - name: ls
         run: ls -la .
       - name: test
@@ -26,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+      - *aptcache
       - name: test
         run: cargo clippy --all-targets --all-features -- -D warnings
   test:
@@ -34,5 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+      - *aptcache
       - name: test
         run: cargo test --all -- --nocapture
