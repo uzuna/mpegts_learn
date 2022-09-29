@@ -4,8 +4,8 @@ use std::{borrow::Cow, fmt::Debug, io::Write, marker::PhantomData};
 
 use byteorder::ByteOrder;
 
-#[cfg(feature = "uasdms")]
-pub mod uasdms;
+#[cfg(feature = "uasdls")]
+pub mod uasdls;
 
 /// KLVパース時に発生するエラーについて
 #[derive(Debug)]

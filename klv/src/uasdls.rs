@@ -1,3 +1,6 @@
+//! MISB Standard 0601
+//! the Unmanned Air System (UAS) Datalink Local Set (LS)
+//! reference: MISB ST 0601.8
 use std::{
     io::Write,
     time::{Duration, SystemTime},
@@ -246,7 +249,7 @@ mod tests {
     use std::time::SystemTime;
 
     use crate::{
-        uasdms::{encode_len, LS_UNIVERSAL_KEY0601_8_10},
+        uasdls::{encode_len, LS_UNIVERSAL_KEY0601_8_10},
         KLVGlobal, KLVReader,
     };
 
@@ -384,13 +387,13 @@ mod tests {
             (UASDataset::Timestamp, Value::Timestamp(SystemTime::now())),
             (
                 UASDataset::ImageSourceSensor,
-                Value::String("TESTS".to_string()),
+                Value::String("asdasdasd".to_string()),
             ),
             (UASDataset::TargetLocationLatitude, Value::I32(1234)),
         ];
-        let mut buf = vec![0; 100];
-        let write_size = encode(&mut buf, &records).unwrap();
         let encode_size = encode_len(&records);
+        let mut buf = vec!(0_u8; encode_size);
+        let write_size = encode(&mut buf, &records).unwrap();
         assert_eq!(encode_size, write_size);
 
         if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {

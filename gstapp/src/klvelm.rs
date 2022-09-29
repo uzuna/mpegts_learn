@@ -5,7 +5,7 @@ use gst::{prelude::*, Caps};
 use gst_app::gst::element_error;
 
 use klv::{
-    uasdms::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
+    uasdls::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
     KLVGlobal, KLVReader,
 };
 use log::{info, warn};
@@ -42,8 +42,6 @@ pub fn uasds_print_sink() -> Result<gst::Element, BoolError> {
                 if buffer.size() > 0 {
                     let mut slice = vec![0; buffer.size()];
                     buffer.copy_to_slice(0, &mut slice).unwrap();
-                    // Check UniversalKey
-                    // info!("buffer {:?}", slice);
                     if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
                         if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
                             let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
@@ -78,14 +76,13 @@ pub fn uasds_test_src() -> Result<gst::Element, BoolError> {
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
-                use klv::uasdms::{encode, encode_len, Value};
+                use klv::uasdls::{encode, encode_len, Value};
                 let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
-
                 let expect_buffer_size = encode_len(&records);
 
                 let mut buffer = gst::Buffer::with_size(expect_buffer_size).unwrap();
                 {
-                    let mut write_buf = Vec::with_capacity(expect_buffer_size);
+                    let mut write_buf = vec![0_u8; expect_buffer_size];
                     let buffer = buffer.get_mut().unwrap();
                     encode(&mut write_buf, &records).unwrap();
                     buffer.copy_from_slice(0, &write_buf).unwrap();

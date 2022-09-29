@@ -11,4 +11,4 @@ log = "0.4.17"
 mpeg2ts-reader = "0.15.0"
 structopt = "0.3.26"
 hex-slice = "0.1.4"
-klv = {package="klv", path = "../klv", features=["uasdms"]}
+klv = {package="klv", path = "../klv", features=["uasdls"]}
