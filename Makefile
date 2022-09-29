@@ -15,3 +15,7 @@ demosave:
 .PHONY: demoplay
 demoplay:
 	cd gstapp && cargo run decode ../test.m2ts
+
+ci: .github/workflows/ci.yml
+.github/workflows/ci.yml: cisupport/workflows/ci.yml
+	cd cisupport && cargo run

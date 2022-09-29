@@ -23,7 +23,7 @@ jobs:
           packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           version: 1.0
       - uses: Swatinem/rust-cache@v2
-      - name: format check
+      - name: check format
         run: cargo fmt --all -- --check
   clippy:
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
           packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           version: 1.0
       - uses: Swatinem/rust-cache@v2
-      - name: clippy check
+      - name: check clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
   test:
     runs-on: ubuntu-latest
