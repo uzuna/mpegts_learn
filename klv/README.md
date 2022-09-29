@@ -9,4 +9,4 @@ Gstreamerの`meta/x-klv`で使うことが目標である。
 ## TODO
 
 - [x] Try parsing USA Datalink Local Set.
-- [ ] Try Embedding `meta/x-klv` into mpeg2tsvideo
+- [x] Try Embedding `meta/x-klv` into mpeg2tsvideo
