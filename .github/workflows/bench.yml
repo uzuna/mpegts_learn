@@ -4,10 +4,12 @@ name: Benchmark
   pull_request:
     types:
       - opened
-      - reopened
+      - synchronize
     paths:
       - ".github/**"
       - klv/**
+    branches:
+      - master
 jobs:
   build_cache:
     runs-on: ubuntu-latest
