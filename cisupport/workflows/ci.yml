@@ -1,4 +1,10 @@
-on: push
+name: Build and test
+on:
+  push:
+    paths:
+      - "gstapp/**"
+      - "klv/**"
+      - "mpegts_reader/**"
 jobs:
   build_cache:
     runs-on: ubuntu-latest
@@ -41,4 +47,36 @@ jobs:
       - *apt-cache
       - *rust-cache
       - name: test
+        run: cargo test --all -- --nocapture
+---
+name: Benchmark
+on:
+  pull_request:
+    types: [opened, reopened]
+    paths:
+      - "klv/**"
+jobs:
+  build_cache:
+    runs-on: ubuntu-latest
+    steps:
+      - &checkout
+        uses: actions/checkout@v3
+      - &apt-cache
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          version: 1.0
+      - &rust-cache
+        uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal
+      - name: build
+        run: cargo build
+  bench_klv:
+    runs-on: ubuntu-latest
+    needs: build_cache
+    steps:
+      - *checkout
+      - *apt-cache
+      - *rust-cache
+      - name: bench
         run: cargo test --all -- --nocapture

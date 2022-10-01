@@ -16,6 +16,14 @@ demosave:
 demoplay:
 	cd gstapp && cargo run decode ../test.m2ts
 
-ci: .github/workflows/ci.yml
-.github/workflows/ci.yml: cisupport/workflows/ci.yml
+.PHONY: generate_ci_settings
+generate_ci_settings: .github/workflows/ci.yml
+.github/workflows/ci.yml: cisupport/workflows/ci.yml cisupport/src/main.rs
 	cd cisupport && cargo run
+
+.PHONY: fixfmt
+fixfmt:
+	cargo fmt
+	# cargo fixはunstagedなファイルがあると動かないため
+	git add -u
+	cargo fix --allow-staged
