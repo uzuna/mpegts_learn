@@ -1,6 +1,6 @@
 [package]
 name = "mpegts_reader"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "print klv metadata from mpeg2ts file"
 publish = false

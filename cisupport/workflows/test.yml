@@ -1,4 +1,11 @@
-on: push
+name: Build and test
+on:
+  push:
+    paths:
+      - ".github/**"
+      - "gstapp/**"
+      - "klv/**"
+      - "mpegts_reader/**"
 jobs:
   build_cache:
     runs-on: ubuntu-latest
