@@ -17,8 +17,8 @@ demoplay:
 	cd gstapp && cargo run decode ../test.m2ts
 
 .PHONY: generate_ci_settings
-generate_ci_settings: .github/workflows/ci.yml
-.github/workflows/ci.yml: cisupport/workflows/ci.yml cisupport/src/main.rs
+generate_ci_settings: .github/workflows/*.yml
+.github/workflows/*.yml: cisupport/workflows/*.yml cisupport/src/main.rs
 	cd cisupport && cargo run
 
 .PHONY: fixfmt
