@@ -3,6 +3,7 @@ on:
   pull_request:
     types: [opened, reopened]
     paths:
+      - ".github/**"
       - "klv/**"
 jobs:
   build_cache:
@@ -28,4 +29,4 @@ jobs:
       - *apt-cache
       - *rust-cache
       - name: bench
-        run: cargo test --all -- --nocapture
+        run: cargo bench --all

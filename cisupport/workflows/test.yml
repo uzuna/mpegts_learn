@@ -2,6 +2,7 @@ name: Build and test
 on:
   push:
     paths:
+      - ".github/**"
       - "gstapp/**"
       - "klv/**"
       - "mpegts_reader/**"

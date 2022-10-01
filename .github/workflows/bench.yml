@@ -6,6 +6,7 @@ name: Benchmark
       - opened
       - reopened
     paths:
+      - ".github/**"
       - klv/**
 jobs:
   build_cache:
@@ -31,4 +32,4 @@ jobs:
           version: 1.0
       - uses: Swatinem/rust-cache@v2
       - name: bench
-        run: cargo test --all -- --nocapture
+        run: cargo bench --all
