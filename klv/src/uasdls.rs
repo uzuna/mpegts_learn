@@ -1,113 +1,15 @@
 //! MISB Standard 0601
 //! the Unmanned Air System (UAS) Datalink Local Set (LS)
 //! reference: MISB ST 0601.8
-use std::{
-    io::Write,
-    time::{Duration, SystemTime},
-};
 
-use byteorder::{BigEndian, ByteOrder};
-
-use crate::{DataSet, LengthOctet, ParseError};
+use crate::{value::Value, DataSet, ParseError};
 
 pub const LS_UNIVERSAL_KEY0601_8_10: [u8; 16] = [
     0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00,
 ];
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Value {
-    Timestamp(SystemTime),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    I16(i16),
-    I32(i32),
-    String(String),
-}
-
-impl From<u8> for Value {
-    fn from(x: u8) -> Self {
-        Value::U8(x)
-    }
-}
-
-impl Value {
-    fn as_i16(x: &[u8]) -> Self {
-        Value::I16(BigEndian::read_i16(x))
-    }
-    fn as_i32(x: &[u8]) -> Self {
-        Value::I32(BigEndian::read_i32(x))
-    }
-    fn as_string(x: &[u8]) -> Self {
-        Value::String(String::from_utf8(x.to_owned()).unwrap())
-    }
-    fn as_timestamp(x: &[u8]) -> Result<Self, ParseError> {
-        let micros = BigEndian::read_u64(x);
-        match SystemTime::UNIX_EPOCH.checked_add(Duration::from_micros(micros)) {
-            Some(ts) => Ok(Value::Timestamp(ts)),
-            None => Err(ParseError::ValueError("failed to parse timestamp.".into())),
-        }
-    }
-    fn as_u16(x: &[u8]) -> Self {
-        Value::U16(BigEndian::read_u16(x))
-    }
-    fn as_u32(x: &[u8]) -> Self {
-        Value::U32(BigEndian::read_u32(x))
-    }
-
-    fn to_bytes<W: Write>(&self, mut buf: W) -> std::io::Result<usize> {
-        use Value::*;
-        match self {
-            Timestamp(x) => {
-                let mut slice = [0; 8];
-                let micros = x
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_micros();
-                BigEndian::write_u64(&mut slice, micros as u64);
-                buf.write(&slice[..])
-            }
-            U8(x) => buf.write(&[*x]),
-            U16(x) => {
-                let mut slice = [0; 2];
-                BigEndian::write_u16(&mut slice, *x);
-                buf.write(&slice[..])
-            }
-            U32(x) => {
-                let mut slice = [0; 4];
-                BigEndian::write_u32(&mut slice, *x);
-                buf.write(&slice[..])
-            }
-            I16(x) => {
-                let mut slice = [0; 2];
-                BigEndian::write_i16(&mut slice, *x);
-                buf.write(&slice[..])
-            }
-            I32(x) => {
-                let mut slice = [0; 4];
-                BigEndian::write_i32(&mut slice, *x);
-                buf.write(&slice[..])
-            }
-            String(s) => buf.write(s.as_bytes()),
-        }
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        match self {
-            Value::Timestamp(_) => 8,
-            Value::U8(_) => 1,
-            Value::U16(_) => 2,
-            Value::U32(_) => 4,
-            Value::I16(_) => 2,
-            Value::I32(_) => 4,
-            Value::String(x) => x.len(),
-        }
-    }
-}
-
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UASDataset {
     Checksum = 1,
     Timestamp = 2,
@@ -216,44 +118,19 @@ impl DataSet for UASDataset {
             ImageSourceSensor | ImageCoordinateSensor => Ok(Value::as_string(v)),
         }
     }
-}
 
-pub fn encode(
-    mut buf: &mut [u8],
-    records: &[(UASDataset, Value)],
-) -> Result<usize, std::io::Error> {
-    let mut size = 0;
-    size += buf.write(&LS_UNIVERSAL_KEY0601_8_10)?;
-    let content_len = contents_len(records);
-    size += LengthOctet::length_to_buf(&mut buf, content_len)?;
-    size += content_len;
-    for (key, value) in records {
-        let _ = buf.write(&[*key as u8, value.len() as u8])?;
-        value.to_bytes(&mut buf)?;
+    fn as_byte(&self) -> u8 {
+        *self as u8
     }
-    Ok(size)
-}
-fn contents_len(records: &[(UASDataset, Value)]) -> usize {
-    records
-        .iter()
-        .fold(0_usize, |size, (_, v)| size + 2 + v.len())
-}
-pub fn encode_len(records: &[(UASDataset, Value)]) -> usize {
-    let mut contents_len = contents_len(records);
-    contents_len += 16; // HEADER
-    contents_len + LengthOctet::encode_len(contents_len) // length
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
 
-    use crate::{
-        uasdls::{encode_len, LS_UNIVERSAL_KEY0601_8_10},
-        KLVGlobal, KLVReader,
-    };
+    use crate::{encode, encode_len, KLVGlobal, KLVReader};
 
-    use super::{encode, UASDataset, Value};
+    use super::{UASDataset, Value, LS_UNIVERSAL_KEY0601_8_10};
     use chrono::{DateTime, Utc};
 
     #[test]
@@ -330,58 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn test_value_encode_decode() {
-        let td = [
-            Value::U8(0),
-            Value::U8(255),
-            Value::U16(256),
-            Value::U32(192),
-            Value::I16(-127),
-            Value::I32(-192),
-            Value::String("EON_$JK)~DFKSDF".to_owned()),
-            Value::Timestamp(SystemTime::now()),
-        ];
-        for x in td {
-            let mut buf = vec![];
-            let size = x.to_bytes(&mut buf).unwrap();
-            assert_eq!(buf.len(), size, "value {:?} {:?} ", x, buf);
-
-            match x {
-                Value::Timestamp(x) => {
-                    if let Value::Timestamp(y) = Value::as_timestamp(&buf).unwrap() {
-                        assert_eq!(
-                            x.duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap()
-                                .as_micros(),
-                            y.duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap()
-                                .as_micros()
-                        );
-                    }
-                }
-                Value::U8(x) => {
-                    assert_eq!(Value::U8(x), Value::from(buf[0]));
-                }
-                Value::U16(x) => {
-                    assert_eq!(Value::U16(x), Value::as_u16(&buf));
-                }
-                Value::U32(x) => {
-                    assert_eq!(Value::U32(x), Value::as_u32(&buf));
-                }
-                Value::I16(x) => {
-                    assert_eq!(Value::I16(x), Value::as_i16(&buf));
-                }
-                Value::I32(x) => {
-                    assert_eq!(Value::I32(x), Value::as_i32(&buf));
-                }
-                Value::String(x) => {
-                    assert_eq!(Value::String(x), Value::as_string(&buf));
-                }
-            }
-        }
-    }
-
-    #[test]
     fn test_encode() {
         let records = [
             (UASDataset::Timestamp, Value::Timestamp(SystemTime::now())),
@@ -393,7 +218,7 @@ mod tests {
         ];
         let encode_size = encode_len(&records);
         let mut buf = vec![0_u8; encode_size];
-        let write_size = encode(&mut buf, &records).unwrap();
+        let write_size = encode(&mut buf, &LS_UNIVERSAL_KEY0601_8_10, &records).unwrap();
         assert_eq!(encode_size, write_size);
 
         if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {

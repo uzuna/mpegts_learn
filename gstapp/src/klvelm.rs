@@ -78,7 +78,8 @@ pub fn uasdls_test_src() -> Result<gst::Element, BoolError> {
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
-                use klv::uasdls::{encode, encode_len, Value};
+                use klv::value::Value;
+                use klv::{encode, encode_len};
                 let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
                 let expect_buffer_size = encode_len(&records);
 
@@ -86,7 +87,7 @@ pub fn uasdls_test_src() -> Result<gst::Element, BoolError> {
                 {
                     let mut write_buf = vec![0_u8; expect_buffer_size];
                     let buffer = buffer.get_mut().unwrap();
-                    encode(&mut write_buf, &records).unwrap();
+                    encode(&mut write_buf, &LS_UNIVERSAL_KEY0601_8_10, &records).unwrap();
                     buffer.copy_from_slice(0, &write_buf).unwrap();
                     buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
                     info!("sending buffer: {}", buffer.size());
