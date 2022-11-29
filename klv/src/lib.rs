@@ -5,6 +5,8 @@ use std::{borrow::Cow, fmt::Debug, io::Write, marker::PhantomData};
 use byteorder::ByteOrder;
 use value::Value;
 
+#[cfg(feature = "testserde")]
+pub mod nk;
 #[cfg(feature = "uasdls")]
 pub mod uasdls;
 #[cfg(feature = "value")]
@@ -124,26 +126,13 @@ impl LengthOctet {
     }
 }
 
-#[allow(non_snake_case)]
-pub fn write_KLVGloval<W: Write>(
-    mut buf: W,
-    key: &[u8; 16],
-    content: &[u8],
-) -> std::io::Result<usize> {
-    buf.write_all(key)?;
-    let length_len = LengthOctet::length_to_buf(&mut buf, content.len())?;
-    let content_len = buf.write(content)?;
-    Ok(16 + length_len + content_len)
-}
-
 #[cfg(feature = "value")]
 pub fn encode<K: DataSet>(
     mut buf: &mut [u8],
-    key: &[u8],
     records: &[(K, Value)],
 ) -> Result<usize, std::io::Error> {
     let mut size = 0;
-    size += buf.write(key)?;
+    size += buf.write(K::key())?;
     let content_len = contents_len(records);
     size += LengthOctet::length_to_buf(&mut buf, content_len)?;
     size += content_len;
@@ -225,6 +214,7 @@ impl<'buf> Iterator for KLVRawReader<'buf> {
 
 pub trait DataSet {
     type Item;
+    fn key() -> &'static [u8];
     fn from_byte(b: u8) -> Option<Self>
     where
         Self: TryFrom<u8>,
@@ -334,8 +324,6 @@ mod tests {
     use super::{DataSet, KLVRawReader, ParseError};
     use crate::{encode, encode_len, value::Value, KLVGlobal, KLVReader, LengthOctet};
 
-    const DUMMY_DATASET_KEY: &str = "dummydataset0000";
-
     #[test]
     fn test_length_octets() {
         use LengthOctet::*;
@@ -400,6 +388,10 @@ mod tests {
         One = 1,
         Two = 2,
     }
+    impl DummyDataset {
+        const KEY: &str = "dummydataset0000";
+    }
+
     impl TryFrom<u8> for DummyDataset {
         type Error = ();
 
@@ -414,6 +406,7 @@ mod tests {
 
     impl DataSet for DummyDataset {
         type Item = Value;
+
         fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
             let v = match self {
                 DummyDataset::One => Self::Item::U8(v[0]),
@@ -431,6 +424,10 @@ mod tests {
 
         fn as_byte(&self) -> u8 {
             *self as u8
+        }
+
+        fn key() -> &'static [u8] {
+            Self::KEY.as_bytes()
         }
     }
 
@@ -457,7 +454,7 @@ mod tests {
         ];
         println!("encode_len {}", encode_len(&records));
         let mut content = vec![0; encode_len(&records)];
-        let size = encode(&mut content, DUMMY_DATASET_KEY.as_bytes(), &records).unwrap();
+        let size = encode(&mut content, &records).unwrap();
         assert_eq!(content.len(), size);
 
         // decode

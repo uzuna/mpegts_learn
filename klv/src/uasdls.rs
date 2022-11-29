@@ -4,10 +4,6 @@
 
 use crate::{value::Value, DataSet, ParseError};
 
-pub const LS_UNIVERSAL_KEY0601_8_10: [u8; 16] = [
-    0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00,
-];
-
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UASDataset {
@@ -53,6 +49,12 @@ pub enum UASDataset {
     GroundRange = 57,
     LSVersionNumber = 65,
 }
+impl UASDataset {
+    const KEY: [u8; 16] = [
+        0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00,
+        0x00,
+    ];
+}
 impl TryFrom<u8> for UASDataset {
     type Error = ();
 
@@ -80,6 +82,10 @@ impl TryFrom<u8> for UASDataset {
 
 impl DataSet for UASDataset {
     type Item = Value;
+
+    fn key() -> &'static [u8] {
+        &Self::KEY
+    }
 
     fn from_byte(b: u8) -> Option<Self>
     where
@@ -130,7 +136,7 @@ mod tests {
 
     use crate::{encode, encode_len, KLVGlobal, KLVReader};
 
-    use super::{UASDataset, Value, LS_UNIVERSAL_KEY0601_8_10};
+    use super::{UASDataset, Value};
     use chrono::{DateTime, Utc};
 
     #[test]
@@ -218,11 +224,11 @@ mod tests {
         ];
         let encode_size = encode_len(&records);
         let mut buf = vec![0_u8; encode_size];
-        let write_size = encode(&mut buf, &LS_UNIVERSAL_KEY0601_8_10, &records).unwrap();
+        let write_size = encode(&mut buf, &records).unwrap();
         assert_eq!(encode_size, write_size);
 
         if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {
-            if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+            if klvg.key_is(&UASDataset::KEY) {
                 let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
                 for x in r {
                     let key = x.key().unwrap();
