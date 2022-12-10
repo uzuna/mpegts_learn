@@ -458,7 +458,7 @@ mod tests {
         // decode
         let klvg = KLVGlobal::from_bytes(&content);
         assert_eq!(klvg.content(), &content[17..]);
-        let r = KLVReader::<DummyDataset>::from_bytes(&klvg.content());
+        let r = KLVReader::<DummyDataset>::from_bytes(klvg.content());
 
         for (id, record) in r.enumerate() {
             assert_eq!(record.key().unwrap(), records[id].0);
