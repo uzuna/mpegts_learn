@@ -5,8 +5,6 @@ use std::{borrow::Cow, fmt::Debug, io::Write, marker::PhantomData};
 use byteorder::ByteOrder;
 use value::Value;
 
-#[cfg(feature = "testserde")]
-pub mod nk;
 #[cfg(feature = "uasdls")]
 pub mod uasdls;
 #[cfg(feature = "value")]
