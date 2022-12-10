@@ -8,6 +8,7 @@ description = "parser for klv metadata"
 
 [dependencies]
 byteorder = {version = "1.4.3"}
+serde = { version = "1.0.149", features = ["derive"] }
 
 [dev-dependencies]
 chrono = "0.4.22"

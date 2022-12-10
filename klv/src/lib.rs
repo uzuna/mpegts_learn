@@ -10,6 +10,9 @@ pub mod uasdls;
 #[cfg(feature = "value")]
 pub mod value;
 
+mod error;
+mod se;
+
 /// KLVパース時に発生するエラーについて
 #[derive(Debug)]
 pub enum ParseError {
