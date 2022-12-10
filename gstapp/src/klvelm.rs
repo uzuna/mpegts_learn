@@ -4,10 +4,7 @@ use glib::BoolError;
 use gst::{prelude::*, Caps};
 use gst_app::gst::element_error;
 
-use klv::{
-    uasdls::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
-    KLVGlobal, KLVReader,
-};
+use klv::{uasdls::UASDataset, DataSet, KLVGlobal, KLVReader};
 use log::{info, warn};
 
 use once_cell::sync::Lazy;
@@ -44,7 +41,7 @@ pub fn uasdls_print_sink() -> Result<gst::Element, BoolError> {
                     let mut slice = vec![0; buffer.size()];
                     buffer.copy_to_slice(0, &mut slice).unwrap();
                     if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
-                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                        if klvg.key_is(UASDataset::key()) {
                             let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
                             for x in r {
                                 info!("  uas ds {:?} {:?}", x.key(), x.parse());
@@ -78,7 +75,8 @@ pub fn uasdls_test_src() -> Result<gst::Element, BoolError> {
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
-                use klv::uasdls::{encode, encode_len, Value};
+                use klv::value::Value;
+                use klv::{encode, encode_len};
                 let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
                 let expect_buffer_size = encode_len(&records);
 

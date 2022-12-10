@@ -1,8 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use klv::{
-    uasdls::{UASDataset, LS_UNIVERSAL_KEY0601_8_10},
-    KLVGlobal, KLVReader,
-};
+use klv::{uasdls::UASDataset, DataSet, KLVGlobal, KLVReader};
 
 const KLV_FRAME_DATA: &[u8] = &[
     0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00,
@@ -22,7 +19,7 @@ fn bench_main(c: &mut Criterion) {
     c.bench_function("klv parse UASDLS sample", |b| {
         b.iter(|| {
             if let Ok(klvg) = KLVGlobal::try_from_bytes(KLV_FRAME_DATA) {
-                if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                if klvg.key_is(UASDataset::key()) {
                     let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
                     for x in r {
                         let _key = x.key().unwrap();

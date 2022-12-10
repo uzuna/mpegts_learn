@@ -1,6 +1,6 @@
 [package]
 name = "klv"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "parser for klv metadata"
 
@@ -14,7 +14,9 @@ chrono = "0.4.22"
 criterion = "0.4.0"
 
 [features]
-uasdls = []
+default = ["value"]
+uasdls = ["value"]
+value = []
 
 [[bench]]
 name = "benchmark"

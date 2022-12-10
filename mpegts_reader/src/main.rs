@@ -3,9 +3,9 @@ extern crate mpeg2ts_reader;
 extern crate hex_slice;
 
 use hex_slice::AsHex;
+use klv::DataSet;
 use log::{debug, info};
 
-use klv::uasdls::LS_UNIVERSAL_KEY0601_8_10;
 use mpeg2ts_reader::demultiplex;
 use mpeg2ts_reader::packet;
 use mpeg2ts_reader::packet::Pid;
@@ -147,7 +147,7 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
     }
     fn end_packet(&mut self, _ctx: &mut DumpDemuxContext) {
         if let Ok(klvg) = KLVGlobal::try_from_bytes(&self.buf) {
-            if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+            if klvg.key_is(UASDataset::key()) {
                 info!("Found UASDLS");
                 let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
                 for x in r {
@@ -207,7 +207,7 @@ fn main() {
                                 pes::PesContents::Parsed(Some(ppc)) => {
                                     let buf = ppc.payload();
                                     if let Ok(klvg) = KLVGlobal::try_from_bytes(buf) {
-                                        if klvg.key_is(&LS_UNIVERSAL_KEY0601_8_10) {
+                                        if klvg.key_is(UASDataset::key()) {
                                             let r =
                                                 KLVReader::<UASDataset>::from_bytes(klvg.content());
 

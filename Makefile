@@ -23,7 +23,12 @@ generate_ci_settings: .github/workflows/*.yml
 
 .PHONY: fixfmt
 fixfmt:
-	cargo fmt
+	cargo fmt --all
 	# cargo fixはunstagedなファイルがあると動かないため
 	git add -u
-	cargo fix --allow-staged
+	cargo fix --allow-staged --all-targets --all-features
+
+.PHONY: check-fmt
+check-fmt:
+	cargo fmt --all -- --check
+	cargo clippy --all-targets --all-features -- -D warnings
