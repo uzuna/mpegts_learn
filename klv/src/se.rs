@@ -1,6 +1,9 @@
 use serde::{ser, Serialize};
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    LengthOctet,
+};
 
 pub struct Serializer {
     // This string starts empty and JSON is appended as values are serialized.
@@ -8,7 +11,16 @@ pub struct Serializer {
     output: Vec<u8>,
 }
 
-pub fn to_string<T>(value: &T) -> Result<Vec<u8>>
+impl Serializer {
+    fn concat(self) -> Vec<u8> {
+        let Self { mut key, output } = self;
+        LengthOctet::length_to_buf(&mut key, output.len()).unwrap();
+        key.extend_from_slice(&output);
+        key
+    }
+}
+
+pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
 where
     T: Serialize,
 {
@@ -18,7 +30,7 @@ where
     };
     value.serialize(&mut serializer)?;
     // ここでKeyを合成するのが良さそう
-    Ok(serializer.output)
+    Ok(serializer.concat())
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -122,7 +134,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         todo!()
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(self, _name: &'static str, _value: &T) -> Result<Self::Ok>
+    fn serialize_newtype_struct<T: ?Sized>(
+        self,
+        _name: &'static str,
+        _value: &T,
+    ) -> Result<Self::Ok>
     where
         T: Serialize,
     {
@@ -325,13 +341,14 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
-    use crate::se::to_string;
+    use crate::de::from_bytes;
+    use crate::se::to_bytes;
 
     #[test]
     fn test_serialize() {
-        #[derive(Serialize)]
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
         #[serde(rename = "TESTDATA00000000")]
         struct Test {
             #[serde(rename = "1")]
@@ -341,6 +358,9 @@ mod tests {
         }
 
         let t = Test { x: true, y: false };
-        println!("{:?}", to_string(&t).unwrap())
+        let s = to_bytes(&t).unwrap();
+        println!("{:?}", s);
+        let x = from_bytes::<Test>(&s).unwrap();
+        println!("{:?}", x);
     }
 }

@@ -10,6 +10,7 @@ pub mod uasdls;
 #[cfg(feature = "value")]
 pub mod value;
 
+mod de;
 mod error;
 mod se;
 
