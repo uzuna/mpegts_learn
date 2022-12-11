@@ -253,6 +253,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // jsonの場合はtoplevelがMapなのでmapに飛ばしている
+        // UniversalKeyとContentLengthを取り出してDeseliarizerに処理を移乗する
         todo!()
     }
 
@@ -260,6 +262,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        // jsonの場合はdeserialize_strへ飛んでいる
+        // Key-Lengthを読み出す関数を作る必要がある
         todo!()
     }
 

@@ -98,7 +98,7 @@ impl LengthOctet {
         }
     }
 
-    pub fn encode_len(size: usize) -> usize {
+    pub const fn encode_len(size: usize) -> usize {
         if size <= 127 {
             1
         } else if size <= u8::MAX as usize {

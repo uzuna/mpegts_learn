@@ -49,7 +49,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
-        self.output.push(v as u8);
+        self.output.extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
         Ok(())
     }
 
@@ -69,8 +69,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         todo!()
     }
 
-    fn serialize_u8(self, _v: u8) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
+        self.output.extend_from_slice(&[LengthOctet::encode_len(1) as u8, v]);
+        Ok(())
     }
 
     fn serialize_u16(self, _v: u16) -> Result<Self::Ok> {
@@ -312,8 +313,11 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        println!("key {}", key);
-        key.serialize(&mut **self)?;
+        let key = key.parse::<u8>().map_err(|e| {
+            Error::Key(format!("failed t kparse key str to u8 {} {}", key, e))
+        })?;
+
+        self.output.push(key);
         value.serialize(&mut **self)
     }
 
@@ -349,11 +353,12 @@ mod tests {
     #[test]
     fn test_serialize() {
         #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        // こうすると指定しやすいけどASCII文字以外が使えないのが難点
         #[serde(rename = "TESTDATA00000000")]
         struct Test {
-            #[serde(rename = "1")]
+            #[serde(rename = "128")]
             x: bool,
-            #[serde(rename = "2")]
+            #[serde(rename = "255")]
             y: bool,
         }
 
