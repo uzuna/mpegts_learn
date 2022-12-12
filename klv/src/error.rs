@@ -24,6 +24,7 @@ pub enum Error {
     Eof,
     Syntax,
     Key(String),
+    UnsupportedLength(String),
     ExpectedBoolean,
     ExpectedInteger,
     ExpectedString,

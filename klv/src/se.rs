@@ -49,7 +49,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
-        self.output.extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
+        self.output
+            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
         Ok(())
     }
 
@@ -70,7 +71,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.output.extend_from_slice(&[LengthOctet::encode_len(1) as u8, v]);
+        self.output
+            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v]);
         Ok(())
     }
 
@@ -313,9 +315,9 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        let key = key.parse::<u8>().map_err(|e| {
-            Error::Key(format!("failed t kparse key str to u8 {} {}", key, e))
-        })?;
+        let key = key
+            .parse::<u8>()
+            .map_err(|e| Error::Key(format!("failed t kparse key str to u8 {} {}", key, e)))?;
 
         self.output.push(key);
         value.serialize(&mut **self)

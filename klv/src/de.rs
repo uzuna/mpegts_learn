@@ -7,6 +7,7 @@ use serde::de::{
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::parse_length;
 
 pub struct Deserializer<'de> {
     input: &'de [u8],
@@ -255,6 +256,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         // jsonの場合はtoplevelがMapなのでmapに飛ばしている
         // UniversalKeyとContentLengthを取り出してDeseliarizerに処理を移乗する
+        // top levelstructと内蔵のstructで扱いを分ける?
+        let key = &self.input[0..16];
+        // BERに従うとする
+        let (length_len, content_len) =
+            parse_length(&self.input[16..]).map_err(|e| Error::UnsupportedLength(e))?;
+        println!("KL {:?} {} {}", key, length_len, content_len);
         todo!()
     }
 
