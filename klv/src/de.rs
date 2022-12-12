@@ -20,12 +20,15 @@ pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
+    if s.len() < 16 {
+        return Err(Error::ContentLenght);
+    }
     let mut deserializer = Deserializer::from_bytes(s);
     let t = T::deserialize(&mut deserializer)?;
     if deserializer.input.len() == deserializer.position {
         Ok(t)
     } else {
-        Err(Error::TrailingCharacters)
+        Err(Error::ContentLenght)
     }
 }
 

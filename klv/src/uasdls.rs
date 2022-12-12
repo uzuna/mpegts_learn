@@ -6,84 +6,82 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{value::Value, DataSet, ParseError};
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename = "\x06\x0e\x2b\x34\x02\x0b\x01\x01\x0e\x01\x03\x01\x01\x00\x00\x00")]
 pub struct UASDatalinkLS<'a> {
     #[serde(rename = "1")]
-    checksum: u16,
+    pub checksum: u16,
     #[serde(rename = "2", with = "timestamp_micro")]
-    timestamp: SystemTime,
+    pub timestamp: SystemTime,
     /// Relative between longitudinal axis and True North measured in the horizontal plane.
     /// Map 0..(2^16-1) to 0..360.
     /// Resolution: ~5.5 milli degrees.
     #[serde(rename = "5")]
-    platform_heading_angle: u16,
+    pub platform_heading_angle: u16,
     /// Angle between longitudinal axis and horizontal plane.
     /// Positive angles above horizontal plane.
     /// Map -(2^15-1)..(2^15-1) to +/-20.
     /// Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
     /// Resolution: ~610 micro degrees.
     #[serde(rename = "6")]
-    platform_pitch_angle: i16,
+    pub platform_pitch_angle: i16,
     /// Angle between transverse axis and transvers-longitudinal plane.
     /// Positive angles for lowered right wing.
     /// Map (-2^15-1)..(2^15-1) to +/-50.
     /// Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
     /// Res: ~1525 micro deg.
     #[serde(rename = "7")]
-    platform_roll_angle: i16,
+    pub platform_roll_angle: i16,
     #[serde(rename = "11", skip_serializing_if = "Option::is_none")]
-    image_source_sensor: Option<&'a str>,
+    pub image_source_sensor: Option<&'a str>,
     #[serde(rename = "12", skip_serializing_if = "Option::is_none")]
-    image_coordinate_sensor: Option<&'a str>,
+    pub image_coordinate_sensor: Option<&'a str>,
 
     #[serde(rename = "13", skip_serializing_if = "Option::is_none")]
-    sensor_latitude: Option<i32>,
+    pub sensor_latitude: Option<i32>,
     #[serde(rename = "14", skip_serializing_if = "Option::is_none")]
-    sensor_longtude: Option<i32>,
+    pub sensor_longtude: Option<i32>,
 
     #[serde(rename = "15", skip_serializing_if = "Option::is_none")]
-    sensor_true_altitude: Option<u16>,
+    pub sensor_true_altitude: Option<u16>,
     #[serde(rename = "16", skip_serializing_if = "Option::is_none")]
-    sensor_horizontal_fov: Option<u16>,
+    pub sensor_horizontal_fov: Option<u16>,
     #[serde(rename = "17", skip_serializing_if = "Option::is_none")]
-    sensor_vertical_fov: Option<u16>,
+    pub sensor_vertical_fov: Option<u16>,
 
     #[serde(rename = "18", skip_serializing_if = "Option::is_none")]
-    sensor_relative_azimuth_angle: Option<u32>,
+    pub sensor_relative_azimuth_angle: Option<u32>,
     #[serde(rename = "19", skip_serializing_if = "Option::is_none")]
-    sensor_relative_elevation_angle: Option<i32>,
+    pub sensor_relative_elevation_angle: Option<i32>,
     #[serde(rename = "20", skip_serializing_if = "Option::is_none")]
-    sensor_relative_roll_angle: Option<i32>,
+    pub sensor_relative_roll_angle: Option<i32>,
 
     #[serde(rename = "21", skip_serializing_if = "Option::is_none")]
-    slant_range: Option<u32>,
+    pub slant_range: Option<u32>,
     // ST 0601.8の仕様書ではではu16だがテストデータでは4バイトだったのでu32とする
     #[serde(rename = "22", skip_serializing_if = "Option::is_none")]
-    target_width: Option<u32>,
+    pub target_width: Option<u32>,
 
     #[serde(rename = "23", skip_serializing_if = "Option::is_none")]
-    frame_center_latitude: Option<i32>,
+    pub frame_center_latitude: Option<i32>,
     #[serde(rename = "24", skip_serializing_if = "Option::is_none")]
-    frame_center_longitude: Option<i32>,
+    pub frame_center_longitude: Option<i32>,
     #[serde(rename = "25", skip_serializing_if = "Option::is_none")]
-    frame_center_elevation: Option<u16>,
+    pub frame_center_elevation: Option<u16>,
 
     #[serde(rename = "40", skip_serializing_if = "Option::is_none")]
-    target_location_latitude: Option<i32>,
+    pub target_location_latitude: Option<i32>,
     #[serde(rename = "41", skip_serializing_if = "Option::is_none")]
-    target_location_longitude: Option<i32>,
+    pub target_location_longitude: Option<i32>,
     #[serde(rename = "42", skip_serializing_if = "Option::is_none")]
-    target_location_elecation: Option<u16>,
+    pub target_location_elecation: Option<u16>,
 
     #[serde(rename = "56", skip_serializing_if = "Option::is_none")]
-    plafform_ground_speed: Option<u8>,
+    pub plafform_ground_speed: Option<u8>,
     #[serde(rename = "57", skip_serializing_if = "Option::is_none")]
-    ground_range: Option<u32>,
+    pub ground_range: Option<u32>,
     #[serde(rename = "65")]
-    ls_version_number: u8,
+    pub ls_version_number: u8,
 }
 
 impl<'a> Default for UASDatalinkLS<'a> {

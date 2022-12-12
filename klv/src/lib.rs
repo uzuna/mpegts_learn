@@ -14,6 +14,9 @@ mod de;
 mod error;
 mod se;
 
+pub use de::from_bytes;
+pub use se::to_bytes;
+
 /// KLVパース時に発生するエラーについて
 #[derive(Debug)]
 pub enum ParseError {

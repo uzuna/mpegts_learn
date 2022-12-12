@@ -11,31 +11,26 @@ pub type Result<T> = std::result::Result<T, Error>;
 // processed.
 #[derive(Debug)]
 pub enum Error {
-    // One or more variants that can be created by data structures through the
-    // `ser::Error` and `de::Error` traits. For example the Serialize impl for
-    // Mutex<T> might return an error because the mutex is poisoned, or the
-    // Deserialize impl for a struct may return an error because a required
-    // field is missing.
+    // GeneralError
     Message(String),
-
-    // Zero or more variants that can be created directly by the Serializer and
-    // Deserializer without going through `ser::Error` and `de::Error`. These
-    // are specific to the format, in this case JSON.
-    Eof,
-    Syntax,
+    // Key Error
+    // related Universal Keys or VER Encoding key
     Key(String),
+    // Unsupported Length, define by BER encoding rules
     UnsupportedLength(String),
+    // write bytes
     IO(std::io::Error),
+    // byte encoding
     Encode(String),
+    // unmatch type length
     TypeLength(String),
-    ExpectedBoolean,
-    ExpectedInteger,
+    // content length
+    // must has 16 byte or more
+    ContentLenght,
+    // string encoding error
     ExpectedString,
-    ExpectedNull,
-    ExpectedMap,
+    // unmatch length between length and content
     ExpectedMapEnd,
-    ExpectedEnum,
-    TrailingCharacters,
 }
 
 impl ser::Error for Error {
@@ -54,7 +49,7 @@ impl Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
-            Error::Eof => formatter.write_str("unexpected end of input"),
+            Error::ContentLenght => formatter.write_str("unexpected end of input or less"),
             /* and so forth */
             _ => formatter.write_str("unexpected error"),
         }
