@@ -242,18 +242,26 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        let pos = self.position + length_len;
+        self.position += length_len + content_len;
+        visitor.visit_borrowed_bytes(&self.input[pos..pos + content_len])
     }
 
-    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        let pos = self.position + length_len;
+        self.position += length_len + content_len;
+        visitor.visit_byte_buf(Vec::from(&self.input[pos..pos + content_len]))
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
@@ -268,11 +276,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         }
     }
 
-    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.position += 1;
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
@@ -321,9 +330,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // 何らかのルールに従うVisitorの実装が必要
-        // JSONの場合はCommaSeparatedでコンマ区切り毎にKVを返すVisitorを渡している
-        // KLVの場合はKey-Length-Valueが続く構造であるため親側の長さの範囲内でKLVを読んでいく
         todo!()
     }
 
@@ -381,10 +387,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 key
             )));
         }
-        // self.input = &self.input[16+length_len..];
         self.position = 16 + length_len;
         visitor.visit_map(KLVVisitor::new(self, self.position + content_len))
-        // self.deserialize_map(visitor)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -398,11 +402,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_string(v.to_string())
     }
 
-    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        // デシリアライズ先がない場合はデータを無視する
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        self.position += length_len + content_len;
+        visitor.visit_unit()
     }
 }
 
@@ -425,11 +433,11 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
         K: DeserializeSeed<'de>,
     {
         // Check if there are no more entries.
+        println!("next_key_seed");
         if self.de.position >= self.len {
             return Ok(None);
         }
         // Deserialize a map key.
-        // jump to any?
         seed.deserialize(&mut *self.de).map(Some)
     }
 
@@ -437,10 +445,88 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
     where
         V: DeserializeSeed<'de>,
     {
+        println!("next_key_seed");
         if self.de.position >= self.len {
             return Err(Error::ExpectedMapEnd);
         }
         // Deserialize a map value.
         seed.deserialize(&mut *self.de)
+    }
+}
+
+/// Parse for unknown KLVdata
+#[derive(Debug)]
+pub struct KLVMap<'m> {
+    universal_key: &'m [u8],
+    content_len: usize,
+    values: Vec<KLVRaw<'m>>,
+}
+
+impl<'m> KLVMap<'m> {
+    pub fn try_from_bytes(buf: &'m [u8]) -> Result<Self> {
+        let buf_len = buf.len();
+        if buf_len < 16 {
+            return Err(Error::ContentLenght);
+        }
+        let universal_key = &buf[0..16];
+        let (length_len, content_len) =
+            parse_length(&buf[16..]).map_err(Error::UnsupportedLength)?;
+        let mut position = 16 + length_len;
+        let mut values = vec![];
+        while position < buf_len {
+            let (length_len, content_len) =
+                parse_length(&buf[position + 1..]).map_err(Error::UnsupportedLength)?;
+            values.push(KLVRaw::from(
+                buf[position],
+                position + length_len,
+                content_len,
+                &buf[position + length_len..],
+            ));
+            position += 1 + length_len + content_len;
+        }
+
+        Ok(Self {
+            universal_key,
+            content_len,
+            values,
+        })
+    }
+
+    pub fn universal_key(&'m self) -> &'m [u8] {
+        self.universal_key
+    }
+    pub fn content_len(&'m self) -> usize {
+        self.content_len
+    }
+    pub fn iter(&'m self) -> std::slice::Iter<KLVRaw<'m>> {
+        self.values.iter()
+    }
+}
+
+#[derive(Debug)]
+pub struct KLVRaw<'m> {
+    pub key: u8,
+    pub position: usize,
+    pub length: usize,
+    pub value: Option<&'m [u8]>,
+}
+
+impl<'m> KLVRaw<'m> {
+    pub fn from(key: u8, position: usize, length: usize, value: &'m [u8]) -> Self {
+        if length > 0 {
+            Self {
+                key,
+                position,
+                length,
+                value: Some(&value[..length]),
+            }
+        } else {
+            Self {
+                key,
+                position,
+                length,
+                value: None,
+            }
+        }
     }
 }

@@ -155,8 +155,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
+        LengthOctet::length_to_buf(&mut self.output, v.len()).map_err(Error::IO)?;
+        self.output.extend_from_slice(v);
+        Ok(())
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
@@ -213,11 +215,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        todo!()
+        unimplemented!()
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        todo!()
+        unimplemented!()
     }
 
     fn serialize_tuple_struct(
@@ -401,11 +403,12 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
+
+    use std::time::{Duration, SystemTime};
 
     use serde::{Deserialize, Serialize};
 
-    use crate::de::from_bytes;
+    use crate::de::{from_bytes, KLVMap};
     use crate::error::Error;
     use crate::se::to_bytes;
 
@@ -658,11 +661,110 @@ mod tests {
         assert_eq!(t, x);
     }
 
+    #[test]
+    fn test_serialize_bytes_any() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestTimestamp<'a> {
+            #[serde(rename = "60", with = "serde_bytes")]
+            byte_slice: &'a [u8],
+            #[serde(rename = "70", with = "serde_bytes")]
+            bytes: Vec<u8>,
+            #[serde(rename = "71")]
+            unit: (),
+        }
+        let t = TestTimestamp {
+            byte_slice: &[255, 128, 64, 32],
+            bytes: vec![0, 1, 2, 4, 8, 16, 32, 64],
+            unit: (),
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestTimestamp>(&s).unwrap();
+        assert_eq!(t, x);
+    }
+
     /// デシリアライズ時に欠損や過剰なデータなどの非対称性があるデータ
     #[test]
-    #[ignore]
     fn test_serialize_asymmetry() {
-        todo!()
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestLarge {
+            #[serde(rename = "30")]
+            require: u16,
+            #[serde(rename = "31")]
+            some: Option<u16>,
+            #[serde(rename = "32")]
+            none: Option<u16>,
+            #[serde(rename = "120", skip_serializing_if = "Option::is_none")]
+            none_skip_none: Option<u16>,
+            #[serde(rename = "121", skip_serializing_if = "Option::is_none")]
+            none_skip_some: Option<u16>,
+        }
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestShort {
+            #[serde(rename = "30")]
+            require: u16,
+        }
+        let t = TestLarge {
+            require: 123,
+            some: Some(345),
+            none: None,
+            none_skip_none: None,
+            none_skip_some: Some(678),
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestShort>(&s).unwrap();
+        assert_eq!(t.require, x.require);
+    }
+
+    #[test]
+    fn test_serialize_dump() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestLarge<'a> {
+            #[serde(rename = "10")]
+            u8: u8,
+            #[serde(rename = "11")]
+            u64: u64,
+            #[serde(rename = "31")]
+            some: Option<u16>,
+            #[serde(rename = "32")]
+            none: Option<u16>,
+            #[serde(rename = "120", skip_serializing_if = "Option::is_none")]
+            none_skip_some: Option<u16>,
+            #[serde(rename = "121", skip_serializing_if = "Option::is_none")]
+            none_skip_none: Option<u16>,
+            #[serde(rename = "60")]
+            str: &'a str,
+            #[serde(rename = "61", with = "serde_bytes")]
+            bytes: &'a [u8],
+            #[serde(rename = "62", with = "timestamp_micro")]
+            ts: SystemTime,
+        }
+        let ts = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_micros(1_000_233_000))
+            .unwrap();
+        let t = TestLarge {
+            u8: 127,
+            u64: u32::MAX as u64 + 1,
+            some: Some(1016),
+            none: None,
+            none_skip_some: Some(2016),
+            none_skip_none: None,
+            str: "this is string",
+            bytes: b"this is byte",
+            ts,
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = KLVMap::try_from_bytes(&s).unwrap();
+
+        assert_eq!(x.universal_key(), "TESTDATA00000000".as_bytes());
+        assert!(x.content_len() > 0);
+
+        for v in x.iter() {
+            println!("{:?}", v);
+        }
     }
 
     mod timestamp_micro {
