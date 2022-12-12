@@ -243,11 +243,16 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         todo!()
     }
 
-    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        if self.input[self.position] == 0 {
+            self.position += 1;
+            visitor.visit_none()
+        } else {
+            visitor.visit_some(self)
+        }
     }
 
     fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>

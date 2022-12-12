@@ -160,22 +160,23 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
-        todo!()
+        self.serialize_unit()
     }
 
-    fn serialize_some<T: ?Sized>(self, _value: &T) -> Result<Self::Ok>
+    fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok>
     where
         T: Serialize,
     {
-        todo!()
+        value.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
-        todo!()
+        LengthOctet::length_to_buf(&mut self.output, 0).map_err(Error::IO)?;
+        Ok(())
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok> {
-        todo!()
+        self.serialize_unit()
     }
 
     fn serialize_unit_variant(
@@ -570,6 +571,44 @@ mod tests {
         };
         let s = to_bytes(&t).unwrap();
         let x = from_bytes::<TestChar>(&s).unwrap();
+        assert_eq!(t, x);
+    }
+    #[test]
+    fn test_serialize_optional_string() {
+        fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+            haystack
+                .windows(needle.len())
+                .position(|window| window == needle)
+        }
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestString {
+            #[serde(rename = "30")]
+            string: String,
+            #[serde(rename = "31")]
+            some: Option<String>,
+            #[serde(rename = "32")]
+            none: Option<String>,
+            #[serde(rename = "120", skip_serializing_if = "Option::is_none")]
+            none_skip_none: Option<String>,
+            #[serde(rename = "121", skip_serializing_if = "Option::is_none")]
+            none_skip_some: Option<String>,
+        }
+        let t = TestString {
+            string: "this is String".to_string(),
+            some: Some("this is Some".to_string()),
+            none: None,
+            none_skip_none: None,
+            none_skip_some: Some("none skip".to_string()),
+        };
+        let s = to_bytes(&t).unwrap();
+        // skipしない場合はLength=0
+        assert!(find_subsequence(&s, &[31, 0]).is_some());
+        // skipする場合はKey自体が存在しない
+        assert!(find_subsequence(&s, &[120, 0]).is_none());
+        // データがある場合はskipされない
+        assert!(find_subsequence(&s, &[121, 9]).is_some());
+        let x = from_bytes::<TestString>(&s).unwrap();
         assert_eq!(t, x);
     }
 
