@@ -1,32 +1,18 @@
-//! BER encoding parser
+//! KLV serialize deserialize library
 
-use std::{borrow::Cow, fmt::Debug};
+use std::fmt::Debug;
 
 use byteorder::ByteOrder;
-
-#[cfg(feature = "uasdls")]
-pub mod uasdls;
 
 mod de;
 mod error;
 mod se;
 
+#[cfg(feature = "uasdls")]
+pub mod uasdls;
+
 pub use de::{from_bytes, KLVMap, KLVRaw};
 pub use se::to_bytes;
-
-/// KLVパース時に発生するエラーについて
-#[derive(Debug)]
-pub enum ParseError {
-    // 定義にないIDの場合
-    UndefinedID(u8),
-    // KLV形式を満たさない場合
-    LessLength,
-    // キーに対応する長さがあるため、それを満たさない場合のエラー
-    UnexpectLength(usize),
-    // 渡された値が不正値などでパースできない時に返す
-    // 'aだとparse()の戻りでライフタイムが足りなくなるので'staticとする
-    ValueError(Cow<'static, str>),
-}
 
 type LengthByteSize = usize;
 type ContentByteSize = usize;
