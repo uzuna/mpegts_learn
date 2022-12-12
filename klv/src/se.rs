@@ -1,3 +1,6 @@
+use std::collections::BTreeSet;
+
+use byteorder::{BigEndian, WriteBytesExt};
 use serde::{ser, Serialize};
 
 use crate::{
@@ -7,16 +10,26 @@ use crate::{
 
 pub struct Serializer {
     // This string starts empty and JSON is appended as values are serialized.
-    key: Vec<u8>,
+    universal_key: Vec<u8>,
     output: Vec<u8>,
+    keys: BTreeSet<u8>,
 }
 
 impl Serializer {
     fn concat(self) -> Vec<u8> {
-        let Self { mut key, output } = self;
+        let Self {
+            universal_key: mut key,
+            output,
+            ..
+        } = self;
         LengthOctet::length_to_buf(&mut key, output.len()).unwrap();
         key.extend_from_slice(&output);
         key
+    }
+    // TODO常にチェックサムを埋め込み、データ破損に対してロバストにする
+    #[allow(dead_code)]
+    fn checksum(buf: &[u8]) -> u32 {
+        buf.iter().fold(0, |a, x| a + *x as u32)
     }
 }
 
@@ -25,8 +38,9 @@ where
     T: Serialize,
 {
     let mut serializer = Serializer {
-        key: vec![],
+        universal_key: vec![],
         output: vec![],
+        keys: BTreeSet::new(),
     };
     value.serialize(&mut serializer)?;
     // ここでKeyを合成するのが良さそう
@@ -54,20 +68,34 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_i8(self, _v: i8) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_i8(self, v: i8) -> Result<Self::Ok> {
+        self.output
+            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
+        Ok(())
     }
 
-    fn serialize_i16(self, _v: i16) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_i16(self, v: i16) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(2) as u8);
+        self.output
+            .write_i16::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
+        Ok(())
     }
 
-    fn serialize_i32(self, _v: i32) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_i32(self, v: i32) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(4) as u8);
+        self.output
+            .write_i32::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
+        Ok(())
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(8) as u8);
+        self.output
+            .write_i64::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
+        Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
@@ -76,16 +104,28 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_u16(self, _v: u16) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(2) as u8);
+        self.output
+            .write_u16::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error u16 {v} to byte. {e}")))?;
+        Ok(())
     }
 
-    fn serialize_u32(self, _v: u32) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_u32(self, v: u32) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(4) as u8);
+        self.output
+            .write_u32::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error u32 {v} to byte. {e}")))?;
+        Ok(())
     }
 
-    fn serialize_u64(self, _v: u64) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
+        self.output.push(LengthOctet::encode_len(8) as u8);
+        self.output
+            .write_u64::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error u64 {v} to byte. {e}")))?;
+        Ok(())
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok> {
@@ -199,7 +239,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
                 name
             )));
         }
-        self.key.extend_from_slice(name.as_bytes());
+        self.universal_key.extend_from_slice(name.as_bytes());
         // lenは構造体のfield数であるため実際の長さがわからない
         // KLV形式においてはヘッダをあとづけするしかない
         self.serialize_map(Some(len))
@@ -318,7 +358,9 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
         let key = key
             .parse::<u8>()
             .map_err(|e| Error::Key(format!("failed t kparse key str to u8 {} {}", key, e)))?;
-
+        if !self.keys.insert(key) {
+            return Err(Error::Key(format!("already use field {}", key)));
+        }
         self.output.push(key);
         value.serialize(&mut **self)
     }
@@ -350,24 +392,100 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use crate::de::from_bytes;
+    use crate::error::Error;
     use crate::se::to_bytes;
 
+    /// シリアライズ、デシリアライズで対称性のある構造体
     #[test]
-    fn test_serialize() {
+    fn test_serialize_symmetry_numbers() {
         #[derive(Debug, Serialize, Deserialize, PartialEq)]
         // こうすると指定しやすいけどASCII文字以外が使えないのが難点
         #[serde(rename = "TESTDATA00000000")]
         struct Test {
             #[serde(rename = "128")]
             x: bool,
-            #[serde(rename = "255")]
-            y: bool,
+            #[serde(rename = "10")]
+            u8: u8,
+            #[serde(rename = "11")]
+            u16: u16,
+            #[serde(rename = "12")]
+            u32: u32,
+            #[serde(rename = "13")]
+            u64: u64,
+            #[serde(rename = "15")]
+            i8: i8,
+            #[serde(rename = "16")]
+            i16: i16,
+            #[serde(rename = "17")]
+            i32: i32,
+            #[serde(rename = "18")]
+            i64: i64,
         }
 
-        let t = Test { x: true, y: false };
+        let t = Test {
+            x: true,
+            u8: 8,
+            u16: 16,
+            u32: 32,
+            u64: 64,
+            i8: -8,
+            i16: -16,
+            i32: -32,
+            i64: -64,
+        };
         let s = to_bytes(&t).unwrap();
-        println!("{:?}", s);
         let x = from_bytes::<Test>(&s).unwrap();
-        println!("{:?}", x);
+        assert_eq!(t, x);
+    }
+
+    #[test]
+    fn test_serialize_error_by_key() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestKeyRangeOutFromU8 {
+            #[serde(rename = "-1")]
+            x: bool,
+        }
+
+        let t = TestKeyRangeOutFromU8 { x: true };
+        let res = to_bytes(&t);
+        match res {
+            Err(Error::Key(_)) => {}
+            _ => unreachable!(),
+        }
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestForgetRename {
+            bbb: bool,
+        }
+        let t = TestForgetRename { bbb: true };
+        let res = to_bytes(&t);
+        match res {
+            Err(Error::Key(_)) => {}
+            _ => unreachable!(),
+        }
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestSameName {
+            #[serde(rename = "10")]
+            bbb: bool,
+            #[serde(rename = "10")]
+            u8: u8,
+        }
+        let t = TestSameName { bbb: true, u8: 128 };
+        let res = to_bytes(&t);
+        match res {
+            Err(Error::Key(_)) => {}
+            _ => unreachable!(),
+        }
+    }
+
+    /// デシリアライズ時に欠損や過剰なデータなどの非対称性があるデータ
+    #[test]
+    #[ignore]
+    fn test_serialize_asymmetry() {
+        todo!()
     }
 }

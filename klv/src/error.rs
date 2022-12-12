@@ -25,6 +25,7 @@ pub enum Error {
     Syntax,
     Key(String),
     UnsupportedLength(String),
+    Encode(String),
     ExpectedBoolean,
     ExpectedInteger,
     ExpectedString,

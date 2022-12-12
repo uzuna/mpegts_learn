@@ -1,9 +1,5 @@
-
-
-use serde::de::{
-    self, DeserializeSeed, MapAccess,
-    Visitor,
-};
+use byteorder::{BigEndian, ByteOrder};
+use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
@@ -64,60 +60,76 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_bool(self.parse_bool()?)
     }
 
-    fn deserialize_i8<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = self.input[self.position + 1] as i8;
+        self.position += 2;
+        visitor.visit_i8(result)
     }
 
-    fn deserialize_i16<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_i16(&self.input[self.position + 1..]);
+        self.position += 3;
+        visitor.visit_i16(result)
     }
 
-    fn deserialize_i32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_i32(&self.input[self.position + 1..]);
+        self.position += 5;
+        visitor.visit_i32(result)
     }
 
-    fn deserialize_i64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_i64(&self.input[self.position + 1..]);
+        self.position += 9;
+        visitor.visit_i64(result)
     }
 
-    fn deserialize_u8<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = self.input[self.position + 1];
+        self.position += 2;
+        visitor.visit_u8(result)
     }
 
-    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_u16(&self.input[self.position + 1..]);
+        self.position += 3;
+        visitor.visit_u16(result)
     }
 
-    fn deserialize_u32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_u32(&self.input[self.position + 1..]);
+        self.position += 5;
+        visitor.visit_u32(result)
     }
 
-    fn deserialize_u64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let result = BigEndian::read_u64(&self.input[self.position + 1..]);
+        self.position += 9;
+        visitor.visit_u64(result)
     }
 
     fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
