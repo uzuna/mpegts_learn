@@ -244,10 +244,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         // Universal Keyが違う場合はパースしても正しくない可能性が高いので処理を止める
+        // TODO 途中で構造体が見つかった場合に分岐するか検討
         if name.len() != 16 {
             return Err(Error::Key(format!(
-                "Prease set struct universal Key for {}",
-                name
+                "Universal Key got {} 16 byte struct universal Key for [{:02x?}] {}",
+                name.len(),
+                name.as_bytes(),
+                name,
             )));
         }
         self.universal_key.extend_from_slice(name.as_bytes());
@@ -637,6 +640,22 @@ mod tests {
                 .unwrap()
                 .as_micros();
         assert_eq!(t_micros, x_micros);
+    }
+
+    #[test]
+    fn test_serialize_non_ascii_universal_key() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "\x06\x0e\x2b\x34\x02\x0b\x01\x01\x0e\x01\x0e\x01\x01\x01\x00\x00")]
+        struct TestTimestamp<'a> {
+            #[serde(rename = "30")]
+            str: &'a str,
+        }
+        let t = TestTimestamp {
+            str: "TestTimestamp struct",
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestTimestamp>(&s).unwrap();
+        assert_eq!(t, x);
     }
 
     /// デシリアライズ時に欠損や過剰なデータなどの非対称性があるデータ

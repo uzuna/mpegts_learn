@@ -49,7 +49,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         // 127以下はbyte長がu8の数値表現そのまま
         if self.input[self.position] != 1 {
             return Err(Error::TypeLength(format!(
-                "expect 1 got {}",
+                "key: {} expect 1 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -64,7 +65,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 1 {
             return Err(Error::TypeLength(format!(
-                "expect 1 got {}",
+                "key: {} expect 1 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -79,7 +81,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 2 {
             return Err(Error::TypeLength(format!(
-                "expect 2 got {}",
+                "key: {} expect 2 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -94,7 +97,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 4 {
             return Err(Error::TypeLength(format!(
-                "expect 4 got {}",
+                "key: {} expect 4 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -109,7 +113,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 8 {
             return Err(Error::TypeLength(format!(
-                "expect 8 got {}",
+                "key: {} expect 8 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -124,7 +129,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 1 {
             return Err(Error::TypeLength(format!(
-                "expect 1 got {}",
+                "key: {} expect 1 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -139,7 +145,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 2 {
             return Err(Error::TypeLength(format!(
-                "expect 2 got {}",
+                "key: {} expect 2 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -154,7 +161,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 4 {
             return Err(Error::TypeLength(format!(
-                "expect 4 got {}",
+                "key: {} expect 4 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -169,7 +177,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 8 {
             return Err(Error::TypeLength(format!(
-                "expect 8 got {}",
+                "key: {} expect 8 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -184,7 +193,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 4 {
             return Err(Error::TypeLength(format!(
-                "expect 4 got {}",
+                "key: {} expect 4 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
@@ -199,7 +209,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input[self.position] != 8 {
             return Err(Error::TypeLength(format!(
-                "expect 8 got {}",
+                "key: {} expect 8 got {}",
+                self.input[self.position - 1],
                 self.input[self.position]
             )));
         }
