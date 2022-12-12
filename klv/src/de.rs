@@ -29,17 +29,7 @@ where
     }
 }
 
-impl<'de> Deserializer<'de> {
-    fn parse_bool(&mut self) -> Result<bool> {
-        let result = self.input[self.position + 1] != 0;
-        self.position += 2;
-        Ok(result)
-    }
-    fn parse_string(&mut self) -> Result<&'de str> {
-        // 長さに合わせてStringにする
-        todo!()
-    }
-}
+impl<'de> Deserializer<'de> {}
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
@@ -56,14 +46,28 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        println!("deserialize_bool");
-        visitor.visit_bool(self.parse_bool()?)
+        // 127以下はbyte長がu8の数値表現そのまま
+        if self.input[self.position] != 1 {
+            return Err(Error::TypeLength(format!(
+                "expect 1 got {}",
+                self.input[self.position]
+            )));
+        }
+        let result = self.input[self.position + 1] != 0;
+        self.position += 2;
+        visitor.visit_bool(result)
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 1 {
+            return Err(Error::TypeLength(format!(
+                "expect 1 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = self.input[self.position + 1] as i8;
         self.position += 2;
         visitor.visit_i8(result)
@@ -73,6 +77,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 2 {
+            return Err(Error::TypeLength(format!(
+                "expect 2 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_i16(&self.input[self.position + 1..]);
         self.position += 3;
         visitor.visit_i16(result)
@@ -82,6 +92,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 4 {
+            return Err(Error::TypeLength(format!(
+                "expect 4 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_i32(&self.input[self.position + 1..]);
         self.position += 5;
         visitor.visit_i32(result)
@@ -91,6 +107,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 8 {
+            return Err(Error::TypeLength(format!(
+                "expect 8 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_i64(&self.input[self.position + 1..]);
         self.position += 9;
         visitor.visit_i64(result)
@@ -100,6 +122,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 1 {
+            return Err(Error::TypeLength(format!(
+                "expect 1 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = self.input[self.position + 1];
         self.position += 2;
         visitor.visit_u8(result)
@@ -109,6 +137,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 2 {
+            return Err(Error::TypeLength(format!(
+                "expect 2 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_u16(&self.input[self.position + 1..]);
         self.position += 3;
         visitor.visit_u16(result)
@@ -118,6 +152,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 4 {
+            return Err(Error::TypeLength(format!(
+                "expect 4 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_u32(&self.input[self.position + 1..]);
         self.position += 5;
         visitor.visit_u32(result)
@@ -127,30 +167,59 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input[self.position] != 8 {
+            return Err(Error::TypeLength(format!(
+                "expect 8 got {}",
+                self.input[self.position]
+            )));
+        }
         let result = BigEndian::read_u64(&self.input[self.position + 1..]);
         self.position += 9;
         visitor.visit_u64(result)
     }
 
-    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        if self.input[self.position] != 4 {
+            return Err(Error::TypeLength(format!(
+                "expect 4 got {}",
+                self.input[self.position]
+            )));
+        }
+        let result = BigEndian::read_f32(&self.input[self.position + 1..]);
+        self.position += 5;
+        visitor.visit_f32(result)
     }
 
-    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        if self.input[self.position] != 8 {
+            return Err(Error::TypeLength(format!(
+                "expect 8 got {}",
+                self.input[self.position]
+            )));
+        }
+        let result = BigEndian::read_f64(&self.input[self.position + 1..]);
+        self.position += 9;
+        visitor.visit_f64(result)
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_string()?)
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        println!("deserialize_str {length_len} {content_len}");
+        let pos = self.position + length_len;
+        self.position += length_len + content_len;
+        let s = std::str::from_utf8(&self.input[pos..pos + content_len])
+            .map_err(|_e| Error::ExpectedString)?;
+        visitor.visit_borrowed_str(s)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -264,7 +333,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_struct<V>(
         self,
         name: &'static str,
-        fields: &'static [&'static str],
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
@@ -277,10 +346,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         // BERに従うとする
         let (length_len, content_len) =
             parse_length(&self.input[self.position + 16..]).map_err(Error::UnsupportedLength)?;
-        println!(
-            "KL {} {:?} {:?} {} {}",
-            name, fields, key, length_len, content_len
-        );
+        // println!(
+        //     "KL {} {:?} {:?} {} {}",
+        //     name, fields, key, length_len, content_len
+        // );
+        if name.as_bytes() != key {
+            return Err(Error::Key(format!(
+                "Universal key is unmatched get {:02x?}, expect {:02x?}",
+                name.as_bytes(),
+                key
+            )));
+        }
         // self.input = &self.input[16+length_len..];
         self.position = 16 + length_len;
         visitor.visit_map(KLVVisitor::new(self, self.position + content_len))

@@ -63,19 +63,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok> {
-        self.output
-            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
+        LengthOctet::length_to_buf(&mut self.output, 1).map_err(Error::IO)?;
+        self.output.push(v as u8);
         Ok(())
     }
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok> {
-        self.output
-            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v as u8]);
+        LengthOctet::length_to_buf(&mut self.output, 1).map_err(Error::IO)?;
+        self.output.push(v as u8);
         Ok(())
     }
 
     fn serialize_i16(self, v: i16) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(2) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 2).map_err(Error::IO)?;
         self.output
             .write_i16::<BigEndian>(v)
             .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
@@ -83,29 +83,29 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_i32(self, v: i32) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(4) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 4).map_err(Error::IO)?;
         self.output
             .write_i32::<BigEndian>(v)
-            .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
+            .map_err(|e| Error::Encode(format!("encodind error i32 {v} to byte. {e}")))?;
         Ok(())
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(8) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 8).map_err(Error::IO)?;
         self.output
             .write_i64::<BigEndian>(v)
-            .map_err(|e| Error::Encode(format!("encodind error i16 {v} to byte. {e}")))?;
+            .map_err(|e| Error::Encode(format!("encodind error i64 {v} to byte. {e}")))?;
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok> {
-        self.output
-            .extend_from_slice(&[LengthOctet::encode_len(1) as u8, v]);
+        LengthOctet::length_to_buf(&mut self.output, 1).map_err(Error::IO)?;
+        self.output.push(v);
         Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(2) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 2).map_err(Error::IO)?;
         self.output
             .write_u16::<BigEndian>(v)
             .map_err(|e| Error::Encode(format!("encodind error u16 {v} to byte. {e}")))?;
@@ -113,7 +113,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u32(self, v: u32) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(4) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 4).map_err(Error::IO)?;
         self.output
             .write_u32::<BigEndian>(v)
             .map_err(|e| Error::Encode(format!("encodind error u32 {v} to byte. {e}")))?;
@@ -121,19 +121,27 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok> {
-        self.output.push(LengthOctet::encode_len(8) as u8);
+        LengthOctet::length_to_buf(&mut self.output, 8).map_err(Error::IO)?;
         self.output
             .write_u64::<BigEndian>(v)
             .map_err(|e| Error::Encode(format!("encodind error u64 {v} to byte. {e}")))?;
         Ok(())
     }
 
-    fn serialize_f32(self, _v: f32) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_f32(self, v: f32) -> Result<Self::Ok> {
+        LengthOctet::length_to_buf(&mut self.output, 4).map_err(Error::IO)?;
+        self.output
+            .write_f32::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error f32 {v} to byte. {e}")))?;
+        Ok(())
     }
 
-    fn serialize_f64(self, _v: f64) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_f64(self, v: f64) -> Result<Self::Ok> {
+        LengthOctet::length_to_buf(&mut self.output, 8).map_err(Error::IO)?;
+        self.output
+            .write_f64::<BigEndian>(v)
+            .map_err(|e| Error::Encode(format!("encodind error f32 {v} to byte. {e}")))?;
+        Ok(())
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok> {
@@ -141,7 +149,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
-        self.output.extend_from_slice(v.as_bytes());
+        let encoded = v.as_bytes();
+        LengthOctet::length_to_buf(&mut self.output, encoded.len()).map_err(Error::IO)?;
+        self.output.extend_from_slice(encoded);
         Ok(())
     }
 
@@ -233,9 +243,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         // 名前の長さを制限することでSerializeのエラーを出せる(実行時)
+        println!("serialize_struct: {name} {}", name.len());
         if name.len() != 16 {
-            return Err(Error::Message(format!(
-                "Prease set struct name 16 char got {}",
+            return Err(Error::Key(format!(
+                "Prease set struct universal Key for {}",
                 name
             )));
         }
@@ -420,6 +431,10 @@ mod tests {
             i32: i32,
             #[serde(rename = "18")]
             i64: i64,
+            #[serde(rename = "20")]
+            f32: f32,
+            #[serde(rename = "21")]
+            f64: f64,
         }
 
         let t = Test {
@@ -432,6 +447,8 @@ mod tests {
             i16: -16,
             i32: -32,
             i64: -64,
+            f32: 0.1,
+            f64: -123.45,
         };
         let s = to_bytes(&t).unwrap();
         let x = from_bytes::<Test>(&s).unwrap();
@@ -480,6 +497,58 @@ mod tests {
             Err(Error::Key(_)) => {}
             _ => unreachable!(),
         }
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct TestNoUniversalKey {
+            #[serde(rename = "10")]
+            bbb: bool,
+        }
+        let t = TestNoUniversalKey { bbb: true };
+        let res = to_bytes(&t);
+        match res {
+            Err(Error::Key(_)) => {}
+            _ => unreachable!(),
+        }
+
+        //
+        // Check same field struct other UniversalKey
+        //
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestRef {
+            #[serde(rename = "10")]
+            bbb: bool,
+        }
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000001")]
+        struct TestTargetOtherUniversalKey {
+            #[serde(rename = "10")]
+            bbb: bool,
+        }
+        let t = TestRef { bbb: true };
+        let reference = to_bytes(&t).unwrap();
+
+        let res = from_bytes::<TestTargetOtherUniversalKey>(&reference);
+        match res {
+            Err(Error::Key(_)) => {}
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_serialize_str() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestStr<'a> {
+            #[serde(rename = "30")]
+            str: &'a str,
+        }
+        let t = TestStr {
+            str: "this is str\09joi4t@",
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestStr>(&s).unwrap();
+        assert_eq!(t, x);
     }
 
     /// デシリアライズ時に欠損や過剰なデータなどの非対称性があるデータ
