@@ -243,8 +243,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        // 名前の長さを制限することでSerializeのエラーを出せる(実行時)
-        println!("serialize_struct: {name} {}", name.len());
+        // Universal Keyが違う場合はパースしても正しくない可能性が高いので処理を止める
         if name.len() != 16 {
             return Err(Error::Key(format!(
                 "Prease set struct universal Key for {}",
@@ -252,8 +251,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             )));
         }
         self.universal_key.extend_from_slice(name.as_bytes());
-        // lenは構造体のfield数であるため実際の長さがわからない
-        // KLV形式においてはヘッダをあとづけするしかない
         self.serialize_map(Some(len))
     }
 
@@ -401,6 +398,8 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use serde::{Deserialize, Serialize};
 
     use crate::de::from_bytes;
@@ -603,7 +602,7 @@ mod tests {
         };
         let s = to_bytes(&t).unwrap();
         // skipしない場合はLength=0
-        assert!(find_subsequence(&s, &[31, 0]).is_some());
+        assert!(find_subsequence(&s, &[32, 0]).is_some());
         // skipする場合はKey自体が存在しない
         assert!(find_subsequence(&s, &[120, 0]).is_none());
         // データがある場合はskipされない
@@ -612,10 +611,65 @@ mod tests {
         assert_eq!(t, x);
     }
 
+    #[test]
+    fn test_serialize_timestamp_micro() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestTimestamp<'a> {
+            #[serde(rename = "30")]
+            str: &'a str,
+            #[serde(rename = "31", with = "timestamp_micro")]
+            ts: SystemTime,
+        }
+        let t = TestTimestamp {
+            str: "TestTimestamp struct",
+            ts: SystemTime::now(),
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestTimestamp>(&s).unwrap();
+        assert_eq!(t.str, x.str);
+        let t_micros =
+            t.ts.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_micros();
+        let x_micros =
+            t.ts.duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_micros();
+        assert_eq!(t_micros, x_micros);
+    }
+
     /// デシリアライズ時に欠損や過剰なデータなどの非対称性があるデータ
     #[test]
     #[ignore]
     fn test_serialize_asymmetry() {
         todo!()
+    }
+
+    mod timestamp_micro {
+        use std::time::{Duration, SystemTime};
+
+        use serde::{Deserialize, Deserializer, Serializer};
+
+        pub fn serialize<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let micros = date
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_micros();
+            serializer.serialize_u64(micros as u64)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let micros = u64::deserialize(deserializer)?;
+            SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_micros(micros))
+                .ok_or_else(|| serde::de::Error::custom("failed to deserialize systemtime"))
+        }
     }
 }

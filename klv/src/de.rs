@@ -214,7 +214,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         let (length_len, content_len) =
             parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
-        println!("deserialize_str {length_len} {content_len}");
         let pos = self.position + length_len;
         self.position += length_len + content_len;
         let s = std::str::from_utf8(&self.input[pos..pos + content_len])
@@ -311,8 +310,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         // 何らかのルールに従うVisitorの実装が必要
         // JSONの場合はCommaSeparatedでコンマ区切り毎にKVを返すVisitorを渡している
         // KLVの場合はKey-Length-Valueが続く構造であるため親側の長さの範囲内でKLVを読んでいく
-        // println!("deserialize_map");
-        // visitor.visit_map(KLVVisitor::new(self, 0))
         todo!()
     }
 
@@ -363,10 +360,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         // BERに従うとする
         let (length_len, content_len) =
             parse_length(&self.input[self.position + 16..]).map_err(Error::UnsupportedLength)?;
-        // println!(
-        //     "KL {} {:?} {:?} {} {}",
-        //     name, fields, key, length_len, content_len
-        // );
         if name.as_bytes() != key {
             return Err(Error::Key(format!(
                 "Universal key is unmatched get {:02x?}, expect {:02x?}",
@@ -418,7 +411,6 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
         K: DeserializeSeed<'de>,
     {
         // Check if there are no more entries.
-        println!("next_key_seed {} {}", self.de.position, self.len);
         if self.de.position >= self.len {
             return Ok(None);
         }
@@ -431,7 +423,6 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
     where
         V: DeserializeSeed<'de>,
     {
-        println!("next_value_seed {} ", self.de.position);
         if self.de.position >= self.len {
             return Err(Error::ExpectedMapEnd);
         }
