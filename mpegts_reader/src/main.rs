@@ -197,7 +197,7 @@ fn main() {
                             match PesHeader::from_bytes(payload).unwrap().contents() {
                                 pes::PesContents::Parsed(Some(ppc)) => {
                                     let buf = ppc.payload();
-                                    if let Ok(d) = from_bytes::<UASDatalinkLS>(&buf) {
+                                    if let Ok(d) = from_bytes::<UASDatalinkLS>(buf) {
                                         println!("x {:?}", d);
                                     }
                                 }

@@ -184,8 +184,7 @@ mod tests {
             ];
 
         let x = from_bytes::<UASDatalinkLS>(&buf).unwrap();
-        println!("x {x:?}");
-        let datetime: DateTime<Utc> = x.timestamp.clone().into();
+        let datetime: DateTime<Utc> = x.timestamp.into();
         assert_eq!(
             DateTime::parse_from_rfc3339("2009-06-17T16:53:05.099653+00:00").unwrap(),
             datetime
