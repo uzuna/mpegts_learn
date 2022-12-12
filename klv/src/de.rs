@@ -323,11 +323,23 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         todo!()
     }
 
-    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let len = self.input[self.position];
+        let v = BigEndian::read_u32(&self.input[self.position + 1..]);
+        let c = std::char::from_u32(v as u32);
+        if let Some(x) = c {
+            self.position += 1 + len as usize;
+            visitor.visit_char(x)
+        } else {
+            Err(Error::Message(format!(
+                "unexpected char {} {}",
+                self.input[self.position],
+                self.input[self.position + 1]
+            )))
+        }
     }
 
     fn deserialize_struct<V>(

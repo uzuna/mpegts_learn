@@ -144,8 +144,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_char(self, _v: char) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_char(self, v: char) -> Result<Self::Ok> {
+        self.serialize_u32(v as u32)
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok> {
@@ -548,6 +548,28 @@ mod tests {
         };
         let s = to_bytes(&t).unwrap();
         let x = from_bytes::<TestStr>(&s).unwrap();
+        assert_eq!(t, x);
+    }
+
+    #[test]
+    fn test_serialize_char() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestChar {
+            #[serde(rename = "30")]
+            char8: char,
+            #[serde(rename = "31")]
+            char16: char,
+            #[serde(rename = "32")]
+            char32: char,
+        }
+        let t = TestChar {
+            char8: '\n',
+            char16: std::char::from_u32(257).unwrap(),
+            char32: std::char::from_u32(u16::MAX as u32 + 1).unwrap(),
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestChar>(&s).unwrap();
         assert_eq!(t, x);
     }
 
