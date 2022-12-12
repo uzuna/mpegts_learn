@@ -1,7 +1,7 @@
-use std::ops::{AddAssign, MulAssign, Neg};
+
 
 use serde::de::{
-    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
+    self, DeserializeSeed, MapAccess,
     Visitor,
 };
 use serde::Deserialize;
@@ -11,11 +11,12 @@ use crate::parse_length;
 
 pub struct Deserializer<'de> {
     input: &'de [u8],
+    position: usize,
 }
 
 impl<'de> Deserializer<'de> {
     pub fn from_bytes(input: &'de [u8]) -> Self {
-        Deserializer { input }
+        Deserializer { input, position: 0 }
     }
 }
 
@@ -25,7 +26,7 @@ where
 {
     let mut deserializer = Deserializer::from_bytes(s);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.input.is_empty() {
+    if deserializer.input.len() == deserializer.position {
         Ok(t)
     } else {
         Err(Error::TrailingCharacters)
@@ -34,8 +35,8 @@ where
 
 impl<'de> Deserializer<'de> {
     fn parse_bool(&mut self) -> Result<bool> {
-        let result = self.input[0] != 0;
-        self.input = &self.input[1..];
+        let result = self.input[self.position + 1] != 0;
+        self.position += 2;
         Ok(result)
     }
     fn parse_string(&mut self) -> Result<&'de str> {
@@ -48,7 +49,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     // 不明な型をParseする場合
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -59,73 +60,74 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        println!("deserialize_bool");
         visitor.visit_bool(self.parse_bool()?)
     }
 
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_i8<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_i16<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_i32<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_i64<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u8<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u32<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u64<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -160,14 +162,14 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         todo!()
     }
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -188,7 +190,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_seq<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -216,21 +218,23 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         // 何らかのルールに従うVisitorの実装が必要
         // JSONの場合はCommaSeparatedでコンマ区切り毎にKVを返すVisitorを渡している
         // KLVの場合はKey-Length-Valueが続く構造であるため親側の長さの範囲内でKLVを読んでいく
-        visitor.visit_map(KLVVisitor::new(self, 0))
+        // println!("deserialize_map");
+        // visitor.visit_map(KLVVisitor::new(self, 0))
+        todo!()
     }
 
     fn deserialize_enum<V>(
         self,
         _name: &'static str,
         _variants: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -238,7 +242,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         todo!()
     }
 
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -257,12 +261,18 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         // jsonの場合はtoplevelがMapなのでmapに飛ばしている
         // UniversalKeyとContentLengthを取り出してDeseliarizerに処理を移乗する
         // top levelstructと内蔵のstructで扱いを分ける?
-        let key = &self.input[0..16];
+        let key = &self.input[self.position..self.position + 16];
         // BERに従うとする
         let (length_len, content_len) =
-            parse_length(&self.input[16..]).map_err(|e| Error::UnsupportedLength(e))?;
-        println!("KL {:?} {} {}", key, length_len, content_len);
-        todo!()
+            parse_length(&self.input[self.position + 16..]).map_err(Error::UnsupportedLength)?;
+        println!(
+            "KL {} {:?} {:?} {} {}",
+            name, fields, key, length_len, content_len
+        );
+        // self.input = &self.input[16+length_len..];
+        self.position = 16 + length_len;
+        visitor.visit_map(KLVVisitor::new(self, self.position + content_len))
+        // self.deserialize_map(visitor)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -271,10 +281,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         // jsonの場合はdeserialize_strへ飛んでいる
         // Key-Lengthを読み出す関数を作る必要がある
-        todo!()
+        let v = self.input[self.position];
+        self.position += 1;
+        visitor.visit_string(v.to_string())
     }
 
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -285,16 +297,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 struct KLVVisitor<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
     len: usize,
-    current: usize,
 }
 
 impl<'a, 'de> KLVVisitor<'a, 'de> {
     fn new(de: &'a mut Deserializer<'de>, len: usize) -> Self {
-        Self {
-            de,
-            len,
-            current: 0,
-        }
+        Self { de, len }
     }
 }
 
@@ -306,7 +313,8 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
         K: DeserializeSeed<'de>,
     {
         // Check if there are no more entries.
-        if self.current >= self.len {
+        println!("next_key_seed {} {}", self.de.position, self.len);
+        if self.de.position >= self.len {
             return Ok(None);
         }
         // Deserialize a map key.
@@ -318,7 +326,8 @@ impl<'de, 'a> MapAccess<'de> for KLVVisitor<'a, 'de> {
     where
         V: DeserializeSeed<'de>,
     {
-        if self.current >= self.len {
+        println!("next_value_seed {} ", self.de.position);
+        if self.de.position >= self.len {
             return Err(Error::ExpectedMapEnd);
         }
         // Deserialize a map value.
