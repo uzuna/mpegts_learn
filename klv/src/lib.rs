@@ -10,6 +10,13 @@ pub mod uasdls;
 #[cfg(feature = "value")]
 pub mod value;
 
+mod de;
+mod error;
+mod se;
+
+pub use de::from_bytes;
+pub use se::to_bytes;
+
 /// KLVパース時に発生するエラーについて
 #[derive(Debug)]
 pub enum ParseError {
@@ -71,11 +78,38 @@ impl<'buf> KLVGlobal<'buf> {
     }
 }
 
+type LengthByteSize = usize;
+type ContentByteSize = usize;
+
+/// parse length rule by BER
+pub fn parse_length(buf: &[u8]) -> Result<(LengthByteSize, ContentByteSize), String> {
+    use byteorder::BigEndian;
+    match LengthOctet::from_u8(buf[0]) {
+        LengthOctet::Short(x) => Ok((1, x as usize)),
+        LengthOctet::Long(x) => match x {
+            1 => Ok((2, buf[1] as usize)),
+            2 => Ok((3, BigEndian::read_u16(&buf[1..3]) as usize)),
+            4 => Ok((4, BigEndian::read_u32(&buf[1..5]) as usize)),
+            8 => Ok((4, BigEndian::read_u64(&buf[1..9]) as usize)),
+            x => Err(format!(
+                "Unsupported length [{}], supported only {{1,2,4,8}}",
+                x
+            )),
+        },
+        LengthOctet::Indefinite => Err("length is Indefinete".to_string()),
+        LengthOctet::Reserved => Err("Reserved octet".to_string()),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum LengthOctet {
+    // 7bit(127)以下の長さは1byteで表される
     Short(u8),
+    // 不定長でマーカオクテットで終了を示す
     Indefinite,
+    // 続くn Byteで数値を表現する。BigEndians
     Long(u8),
+    // 予約済みで到達しないはずの値
     Reserved,
 }
 
@@ -94,7 +128,7 @@ impl LengthOctet {
         }
     }
 
-    pub fn encode_len(size: usize) -> usize {
+    pub const fn encode_len(size: usize) -> usize {
         if size <= 127 {
             1
         } else if size <= u8::MAX as usize {

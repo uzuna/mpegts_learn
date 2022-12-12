@@ -2,147 +2,159 @@
 //! the Unmanned Air System (UAS) Datalink Local Set (LS)
 //! reference: MISB ST 0601.8
 
-use crate::{value::Value, DataSet, ParseError};
+use std::time::SystemTime;
 
-#[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum UASDataset {
-    Checksum = 1,
-    Timestamp = 2,
-    // Relative between longitudinal axis and True North measured in the horizontal plane.
-    // Map 0..(2^16-1) to 0..360.
-    // Resolution: ~5.5 milli degrees.
-    PlatformHeadingAngle = 5,
-    // Angle between longitudinal axis and horizontal plane.
-    // Positive angles above horizontal plane.
-    // Map -(2^15-1)..(2^15-1) to +/-20.
-    // Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
-    // Resolution: ~610 micro degrees.
-    PlatformPitchAngle = 6,
-    // Angle between transverse axis and transvers-longitudinal plane.
-    // Positive angles for lowered right wing.
-    // Map (-2^15-1)..(2^15-1) to +/-50.
-    // Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
-    // Res: ~1525 micro deg.
-    PlatformRollAngle = 7,
-    ImageSourceSensor = 11,
-    ImageCoordinateSensor = 12,
-    SensorLatitude = 13,
-    SensorLongtude = 14,
-    SensorTrueAltitude = 15,
-    SensorHorizontalFOV = 16,
-    SensorVerticalFOV = 17,
-    SensorRelativeAzimuthAngle = 18,
-    SensorRelativeElevationAngle = 19,
-    SensorRelativeRollAngle = 20,
-    SlantRange = 21,
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename = "\x06\x0e\x2b\x34\x02\x0b\x01\x01\x0e\x01\x03\x01\x01\x00\x00\x00")]
+pub struct UASDatalinkLS<'a> {
+    #[serde(rename = "1")]
+    pub checksum: u16,
+    #[serde(rename = "2", with = "timestamp_micro")]
+    pub timestamp: SystemTime,
+    /// Relative between longitudinal axis and True North measured in the horizontal plane.
+    /// Map 0..(2^16-1) to 0..360.
+    /// Resolution: ~5.5 milli degrees.
+    #[serde(rename = "5")]
+    pub platform_heading_angle: u16,
+    /// Angle between longitudinal axis and horizontal plane.
+    /// Positive angles above horizontal plane.
+    /// Map -(2^15-1)..(2^15-1) to +/-20.
+    /// Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
+    /// Resolution: ~610 micro degrees.
+    #[serde(rename = "6")]
+    pub platform_pitch_angle: i16,
+    /// Angle between transverse axis and transvers-longitudinal plane.
+    /// Positive angles for lowered right wing.
+    /// Map (-2^15-1)..(2^15-1) to +/-50.
+    /// Use -(2^15) as "out of range" indicator. -(2^15) = 0x8000.
+    /// Res: ~1525 micro deg.
+    #[serde(rename = "7")]
+    pub platform_roll_angle: i16,
+    #[serde(rename = "11", skip_serializing_if = "Option::is_none")]
+    pub image_source_sensor: Option<&'a str>,
+    #[serde(rename = "12", skip_serializing_if = "Option::is_none")]
+    pub image_coordinate_sensor: Option<&'a str>,
+
+    #[serde(rename = "13", skip_serializing_if = "Option::is_none")]
+    pub sensor_latitude: Option<i32>,
+    #[serde(rename = "14", skip_serializing_if = "Option::is_none")]
+    pub sensor_longtude: Option<i32>,
+
+    #[serde(rename = "15", skip_serializing_if = "Option::is_none")]
+    pub sensor_true_altitude: Option<u16>,
+    #[serde(rename = "16", skip_serializing_if = "Option::is_none")]
+    pub sensor_horizontal_fov: Option<u16>,
+    #[serde(rename = "17", skip_serializing_if = "Option::is_none")]
+    pub sensor_vertical_fov: Option<u16>,
+
+    #[serde(rename = "18", skip_serializing_if = "Option::is_none")]
+    pub sensor_relative_azimuth_angle: Option<u32>,
+    #[serde(rename = "19", skip_serializing_if = "Option::is_none")]
+    pub sensor_relative_elevation_angle: Option<i32>,
+    #[serde(rename = "20", skip_serializing_if = "Option::is_none")]
+    pub sensor_relative_roll_angle: Option<i32>,
+
+    #[serde(rename = "21", skip_serializing_if = "Option::is_none")]
+    pub slant_range: Option<u32>,
     // ST 0601.8の仕様書ではではu16だがテストデータでは4バイトだったのでu32とする
-    TargetWidth = 22,
-    FrameCenterLatitude = 23,
-    FrameCenterLongitude = 24,
-    FrameCenterElevation = 25,
-    TargetLocationLatitude = 40,
-    TargetLocationLongitude = 41,
-    TargetLocationElevation = 42,
-    // Meters/Second
-    PlatformGroundSpeed = 56,
-    GroundRange = 57,
-    LSVersionNumber = 65,
-}
-impl UASDataset {
-    const KEY: [u8; 16] = [
-        0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00,
-        0x00,
-    ];
-}
-impl TryFrom<u8> for UASDataset {
-    type Error = ();
+    #[serde(rename = "22", skip_serializing_if = "Option::is_none")]
+    pub target_width: Option<u32>,
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        use UASDataset::*;
-        match value {
-            x if x == Checksum as u8 => Ok(Checksum),
-            x if x == Timestamp as u8 => Ok(Timestamp),
-            x if x == PlatformHeadingAngle as u8 => Ok(PlatformHeadingAngle),
-            x if x == PlatformPitchAngle as u8 => Ok(PlatformPitchAngle),
-            x if x == PlatformRollAngle as u8 => Ok(PlatformRollAngle),
-            x if x >= ImageSourceSensor as u8 && x <= FrameCenterElevation as u8 => {
-                Ok(unsafe { std::mem::transmute(x) })
-            }
-            x if x >= TargetLocationLatitude as u8 && x <= TargetLocationElevation as u8 => {
-                Ok(unsafe { std::mem::transmute(x) })
-            }
-            x if x == PlatformGroundSpeed as u8 => Ok(PlatformGroundSpeed),
-            x if x == GroundRange as u8 => Ok(GroundRange),
-            x if x == LSVersionNumber as u8 => Ok(LSVersionNumber),
-            _ => Err(()),
+    #[serde(rename = "23", skip_serializing_if = "Option::is_none")]
+    pub frame_center_latitude: Option<i32>,
+    #[serde(rename = "24", skip_serializing_if = "Option::is_none")]
+    pub frame_center_longitude: Option<i32>,
+    #[serde(rename = "25", skip_serializing_if = "Option::is_none")]
+    pub frame_center_elevation: Option<u16>,
+
+    #[serde(rename = "40", skip_serializing_if = "Option::is_none")]
+    pub target_location_latitude: Option<i32>,
+    #[serde(rename = "41", skip_serializing_if = "Option::is_none")]
+    pub target_location_longitude: Option<i32>,
+    #[serde(rename = "42", skip_serializing_if = "Option::is_none")]
+    pub target_location_elecation: Option<u16>,
+
+    #[serde(rename = "56", skip_serializing_if = "Option::is_none")]
+    pub plafform_ground_speed: Option<u8>,
+    #[serde(rename = "57", skip_serializing_if = "Option::is_none")]
+    pub ground_range: Option<u32>,
+    #[serde(rename = "65")]
+    pub ls_version_number: u8,
+}
+
+impl<'a> Default for UASDatalinkLS<'a> {
+    fn default() -> Self {
+        Self {
+            checksum: Default::default(),
+            timestamp: SystemTime::UNIX_EPOCH,
+            platform_heading_angle: Default::default(),
+            platform_pitch_angle: Default::default(),
+            platform_roll_angle: Default::default(),
+            image_source_sensor: Default::default(),
+            image_coordinate_sensor: Default::default(),
+            sensor_latitude: Default::default(),
+            sensor_longtude: Default::default(),
+            sensor_true_altitude: Default::default(),
+            sensor_horizontal_fov: Default::default(),
+            sensor_vertical_fov: Default::default(),
+            sensor_relative_azimuth_angle: Default::default(),
+            sensor_relative_elevation_angle: Default::default(),
+            sensor_relative_roll_angle: Default::default(),
+            slant_range: Default::default(),
+            target_width: Default::default(),
+            frame_center_latitude: Default::default(),
+            frame_center_longitude: Default::default(),
+            frame_center_elevation: Default::default(),
+            target_location_latitude: Default::default(),
+            target_location_longitude: Default::default(),
+            target_location_elecation: Default::default(),
+            plafform_ground_speed: Default::default(),
+            ground_range: Default::default(),
+            ls_version_number: Default::default(),
         }
     }
 }
 
-impl DataSet for UASDataset {
-    type Item = Value;
+mod timestamp_micro {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::{Duration, SystemTime};
 
-    fn key() -> &'static [u8] {
-        &Self::KEY
-    }
-
-    fn from_byte(b: u8) -> Option<Self>
+    pub fn serialize<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
     where
-        Self: std::marker::Sized,
+        S: Serializer,
     {
-        if let Ok(x) = UASDataset::try_from(b) {
-            Some(x)
-        } else {
-            None
-        }
+        let micros = date
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
+        serializer.serialize_u64(micros as u64)
     }
 
-    fn value(&self, v: &[u8]) -> Result<Self::Item, ParseError> {
-        use UASDataset::*;
-        match self {
-            Timestamp => Value::as_timestamp(v),
-            PlatformGroundSpeed | LSVersionNumber | Checksum => Ok(Value::from(v[0])),
-            PlatformHeadingAngle
-            | SensorTrueAltitude
-            | SensorHorizontalFOV
-            | SensorVerticalFOV
-            | FrameCenterElevation
-            | TargetLocationElevation => Ok(Value::as_u16(v)),
-            PlatformPitchAngle | PlatformRollAngle => Ok(Value::as_i16(v)),
-            SensorLatitude
-            | SensorLongtude
-            | SensorRelativeElevationAngle
-            | SensorRelativeRollAngle
-            | FrameCenterLatitude
-            | FrameCenterLongitude
-            | TargetLocationLatitude
-            | TargetLocationLongitude => Ok(Value::as_i32(v)),
-            SensorRelativeAzimuthAngle | SlantRange | TargetWidth | GroundRange => {
-                Ok(Value::as_u32(v))
-            }
-            ImageSourceSensor | ImageCoordinateSensor => Ok(Value::as_string(v)),
-        }
-    }
-
-    fn as_byte(&self) -> u8 {
-        *self as u8
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let micros = u64::deserialize(deserializer)?;
+        SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_micros(micros))
+            .ok_or_else(|| serde::de::Error::custom("failed to deserialize systemtime"))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
-
-    use crate::{encode, encode_len, KLVGlobal, KLVReader};
-
-    use super::{UASDataset, Value};
+    use crate::{de::from_bytes, se::to_bytes, uasdls::UASDatalinkLS};
     use chrono::{DateTime, Utc};
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn test_uas_datalink_ls() {
         #[rustfmt::skip]
         let buf = vec![
+            0x06, 0x0e, 0x2b, 0x34, 0x02, 0x0b, 0x01, 0x01, 0x0e, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00,0x00,
+            129, 0x91,
             2, 8, 0, 0x4, 0x6c, 0x8e, 0x20, 0x03, 0x83, 0x85,
             65, 1, 1,
             5, 2, 0x3d, 0x3b,
@@ -171,78 +183,35 @@ mod tests {
             1, 2, 0x1c, 0x5f
             ];
 
-        let klv = KLVReader::<UASDataset>::from_bytes(&buf);
-
-        for x in klv {
-            let key = x.key();
-            if key.is_err() {
-                println!("Error {:?}", key);
-                continue;
-            }
-            let key = key.unwrap();
-            println!("key {:?} {:?}", key, x.content());
-            println!("value {:?}", x.parse());
-            match (key, x.parse()) {
-                (UASDataset::Timestamp, Ok(Value::Timestamp(ts))) => {
-                    let datetime: DateTime<Utc> = ts.into();
-                    assert_eq!(
-                        DateTime::parse_from_rfc3339("2009-06-17T16:53:05.099653+00:00").unwrap(),
-                        datetime
-                    );
-                }
-                (UASDataset::LSVersionNumber, Ok(Value::U8(version))) => {
-                    assert_eq!(version, 1);
-                }
-                (UASDataset::PlatformHeadingAngle, Ok(Value::U16(angle))) => {
-                    assert_eq!(angle, 15675);
-                }
-                (UASDataset::SensorLatitude, Ok(Value::I32(degrees))) => {
-                    assert_eq!(degrees, 1304747195);
-                }
-                (UASDataset::ImageSourceSensor, Ok(Value::String(name))) => {
-                    assert_eq!(&name, "EON");
-                }
-                (UASDataset::ImageCoordinateSensor, Ok(Value::String(name))) => {
-                    assert_eq!(&name, "Geodetic WGS84");
-                }
-                (k, v) => {
-                    println!("without assert test case {:?} {:?}", k, v)
-                }
-            }
-        }
+        let x = from_bytes::<UASDatalinkLS>(&buf).unwrap();
+        let datetime: DateTime<Utc> = x.timestamp.into();
+        assert_eq!(
+            DateTime::parse_from_rfc3339("2009-06-17T16:53:05.099653+00:00").unwrap(),
+            datetime
+        );
+        assert_eq!(x.ls_version_number, 1);
+        assert_eq!(x.platform_heading_angle, 15675);
+        assert_eq!(x.sensor_latitude, Some(1304747195));
+        assert_eq!(x.image_source_sensor, Some("EON"));
+        assert_eq!(x.image_coordinate_sensor, Some("Geodetic WGS84"));
     }
 
     #[test]
-    fn test_encode() {
-        let records = [
-            (UASDataset::Timestamp, Value::Timestamp(SystemTime::now())),
-            (
-                UASDataset::ImageSourceSensor,
-                Value::String("asdasdasd".to_string()),
-            ),
-            (UASDataset::TargetLocationLatitude, Value::I32(1234)),
-        ];
-        let encode_size = encode_len(&records);
-        let mut buf = vec![0_u8; encode_size];
-        let write_size = encode(&mut buf, &records).unwrap();
-        assert_eq!(encode_size, write_size);
+    fn test_serialize() {
+        let ts = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_micros(1_000_233_000))
+            .unwrap();
+        let t = UASDatalinkLS {
+            checksum: 0,
+            timestamp: ts,
+            platform_heading_angle: 123,
+            platform_pitch_angle: -345,
+            platform_roll_angle: 456,
+            ..Default::default()
+        };
 
-        if let Ok(klvg) = KLVGlobal::try_from_bytes(&buf) {
-            if klvg.key_is(&UASDataset::KEY) {
-                let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-                for x in r {
-                    let key = x.key().unwrap();
-                    assert!(
-                        key == UASDataset::Timestamp
-                            || key == UASDataset::ImageSourceSensor
-                            || key == UASDataset::TargetLocationLatitude
-                    );
-                }
-            } else {
-                println!("unknown key {:?}", &buf[..16]);
-            }
-        } else {
-            println!("unknown data {:?}", &buf);
-        }
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<UASDatalinkLS>(&s).unwrap();
+        assert_eq!(t, x);
     }
 }

@@ -4,8 +4,8 @@ use glib::BoolError;
 use gst::{prelude::*, Caps};
 use gst_app::gst::element_error;
 
-use klv::{uasdls::UASDataset, DataSet, KLVGlobal, KLVReader};
-use log::{info, warn};
+use klv::{from_bytes, to_bytes, uasdls::UASDatalinkLS};
+use log::info;
 
 use once_cell::sync::Lazy;
 
@@ -38,19 +38,9 @@ pub fn uasdls_print_sink() -> Result<gst::Element, BoolError> {
                 })?;
 
                 if buffer.size() > 0 {
-                    let mut slice = vec![0; buffer.size()];
-                    buffer.copy_to_slice(0, &mut slice).unwrap();
-                    if let Ok(klvg) = KLVGlobal::try_from_bytes(&slice) {
-                        if klvg.key_is(UASDataset::key()) {
-                            let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-                            for x in r {
-                                info!("  uas ds {:?} {:?}", x.key(), x.parse());
-                            }
-                        } else {
-                            warn!("unknown key {:?}", &slice[..16]);
-                        }
-                    } else {
-                        warn!("unknown data {:?}", &slice);
+                    let mr = buffer.map_readable().unwrap();
+                    if let Ok(res) = from_bytes::<UASDatalinkLS>(mr.as_slice()) {
+                        log::info!("uasdls {:?}", res);
                     }
                 }
                 Ok(gst::FlowSuccess::Ok)
@@ -75,20 +65,21 @@ pub fn uasdls_test_src() -> Result<gst::Element, BoolError> {
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
-                use klv::value::Value;
-                use klv::{encode, encode_len};
-                let records = [(UASDataset::Timestamp, Value::Timestamp(SystemTime::now()))];
-                let expect_buffer_size = encode_len(&records);
+                let records = UASDatalinkLS {
+                    timestamp: SystemTime::now(),
+                    ..Default::default()
+                };
+                let data = to_bytes(&records).unwrap();
 
-                let mut buffer = gst::Buffer::with_size(expect_buffer_size).unwrap();
+                let mut buffer = gst::Buffer::with_size(data.len()).unwrap();
                 {
-                    let mut write_buf = vec![0_u8; expect_buffer_size];
-                    let buffer = buffer.get_mut().unwrap();
-                    encode(&mut write_buf, &records).unwrap();
-                    buffer.copy_from_slice(0, &write_buf).unwrap();
-                    buffer.set_pts(i * 500 * gst::ClockTime::MSECOND);
-                    info!("sending buffer: {}", buffer.size());
+                    let bufref = buffer.make_mut();
+                    bufref.set_pts(i * 500 * gst::ClockTime::MSECOND);
+                    let mut mw = bufref.map_writable().unwrap();
+                    mw.as_mut_slice().copy_from_slice(&data)
                 }
+
+                info!("sending buffer: {}", buffer.size());
                 i += 1;
 
                 // appsrc already handles the error here for us.

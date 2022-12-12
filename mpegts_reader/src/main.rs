@@ -3,8 +3,9 @@ extern crate mpeg2ts_reader;
 extern crate hex_slice;
 
 use hex_slice::AsHex;
-use klv::DataSet;
-use log::{debug, info};
+use klv::from_bytes;
+use klv::uasdls::UASDatalinkLS;
+use log::debug;
 
 use mpeg2ts_reader::demultiplex;
 use mpeg2ts_reader::packet;
@@ -21,8 +22,6 @@ use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
 
-use klv::uasdls::UASDataset;
-use klv::{KLVGlobal, KLVReader};
 use structopt::StructOpt;
 
 // This macro invocation creates an enum called DumpFilterSwitch, encapsulating all possible ways
@@ -146,16 +145,8 @@ impl pes::ElementaryStreamConsumer<DumpDemuxContext> for PtsDumpElementaryStream
         self.len = self.len.map(|l| l + data.len());
     }
     fn end_packet(&mut self, _ctx: &mut DumpDemuxContext) {
-        if let Ok(klvg) = KLVGlobal::try_from_bytes(&self.buf) {
-            if klvg.key_is(UASDataset::key()) {
-                info!("Found UASDLS");
-                let r = KLVReader::<UASDataset>::from_bytes(klvg.content());
-                for x in r {
-                    info!("  {:?} {:?}", x.key(), x.parse());
-                }
-            }
-            self.buf.clear();
-            self.len = None;
+        if let Ok(d) = from_bytes::<UASDatalinkLS>(&self.buf) {
+            println!("x {:?}", d);
         }
     }
     fn continuity_error(&mut self, _ctx: &mut DumpDemuxContext) {}
@@ -206,15 +197,8 @@ fn main() {
                             match PesHeader::from_bytes(payload).unwrap().contents() {
                                 pes::PesContents::Parsed(Some(ppc)) => {
                                     let buf = ppc.payload();
-                                    if let Ok(klvg) = KLVGlobal::try_from_bytes(buf) {
-                                        if klvg.key_is(UASDataset::key()) {
-                                            let r =
-                                                KLVReader::<UASDataset>::from_bytes(klvg.content());
-
-                                            for x in r {
-                                                println!("uas ds {:?} {:?}", x.key(), x.parse());
-                                            }
-                                        }
+                                    if let Ok(d) = from_bytes::<UASDatalinkLS>(buf) {
+                                        println!("x {:?}", d);
                                     }
                                 }
                                 pes::PesContents::Parsed(None) => {
