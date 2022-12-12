@@ -155,8 +155,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok> {
-        todo!()
+    fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok> {
+        LengthOctet::length_to_buf(&mut self.output, v.len()).map_err(Error::IO)?;
+        self.output.extend_from_slice(v);
+        Ok(())
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
@@ -213,11 +215,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        todo!()
+        unimplemented!()
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        todo!()
+        unimplemented!()
     }
 
     fn serialize_tuple_struct(
@@ -652,6 +654,28 @@ mod tests {
         }
         let t = TestTimestamp {
             str: "TestTimestamp struct",
+        };
+        let s = to_bytes(&t).unwrap();
+        let x = from_bytes::<TestTimestamp>(&s).unwrap();
+        assert_eq!(t, x);
+    }
+
+    #[test]
+    fn test_serialize_bytes_any() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        #[serde(rename = "TESTDATA00000000")]
+        struct TestTimestamp<'a> {
+            #[serde(rename = "60", with = "serde_bytes")]
+            byte_slice: &'a [u8],
+            #[serde(rename = "70", with = "serde_bytes")]
+            bytes: Vec<u8>,
+            #[serde(rename = "71")]
+            unit: (),
+        }
+        let t = TestTimestamp {
+            byte_slice: &[255, 128, 64, 32],
+            bytes: vec![0, 1, 2, 4, 8, 16, 32, 64],
+            unit: (),
         };
         let s = to_bytes(&t).unwrap();
         let x = from_bytes::<TestTimestamp>(&s).unwrap();

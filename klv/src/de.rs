@@ -242,18 +242,26 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        let pos = self.position + length_len;
+        self.position += length_len + content_len;
+        visitor.visit_borrowed_bytes(&self.input[pos..pos + content_len])
     }
 
-    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        let (length_len, content_len) =
+            parse_length(&self.input[self.position..]).map_err(Error::UnsupportedLength)?;
+        let pos = self.position + length_len;
+        self.position += length_len + content_len;
+        visitor.visit_byte_buf(Vec::from(&self.input[pos..pos + content_len]))
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
@@ -268,11 +276,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         }
     }
 
-    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        self.position += 1;
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
